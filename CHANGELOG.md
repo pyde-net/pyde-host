@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project's versioning tracks the `HOST_FN_ABI_SPEC` version — see
 [`README.md`](./README.md#versioning) for the exact policy.
 
+## [0.1.0-alpha.6] — 2026-07-01
+
+### Changed
+
+- **AssemblyScript package restructured to the standard library layout.**
+  Source moved from `src/` to `assembly/` and the package is now imported
+  via the `@pyde-net/host/assembly` subpath (the AssemblyScript ecosystem
+  convention, matching `as-bignum/assembly`). The previous `src/`-based
+  layout with `main`/`types` pointing at `src/index.ts` did not resolve
+  under `asc` — bare `import ... from "@pyde-net/host"` failed with
+  `File '~lib/@pyde-net/host.ts' not found`. `package.json` now sets
+  `main`/`types` to `assembly/index.ts` and ships `assembly/` in `files`.
+- **AssemblyScript peer dependency widened** from `^0.27.0` to `>=0.27.0`
+  so projects on `assemblyscript@0.28.x` install without an `ERESOLVE`
+  peer conflict. The bindings use only stable `@external` decorators and
+  `usize`/`i32`/`i64` types, which are unchanged across 0.27/0.28.
+- Rust, Go, and C bindings republished at `0.1.0-alpha.6` with no
+  functional change, so all four language bindings share a version
+  identifier.
+
 ## [0.1.0-alpha.5] — 2026-07-01
 
 ### Changed

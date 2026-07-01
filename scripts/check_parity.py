@@ -18,7 +18,7 @@ Adding a new host function:
        `extern "C"` block). Use `#[link_name = "<wire>"]` above the fn
        if the source-language identifier must differ from the wire name.
     2. Add `@external("pyde", "<wire>")` + declaration to
-       assemblyscript/src/host_fns.ts.
+       assemblyscript/assembly/host_fns.ts.
     3. Add `//go:wasmimport pyde <wire>` + func stub to go/host_fns.go.
     4. Add `PYDE_HOST_FN(<wire>);` to c/include/pyde/host.h, or
        (for C-keyword names) an inline `__attribute__((import_module("pyde"),
@@ -35,7 +35,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 RUST_SRC = ROOT / "rust" / "pyde-host" / "src" / "lib.rs"
-AS_SRC = ROOT / "assemblyscript" / "src" / "host_fns.ts"
+AS_SRC = ROOT / "assemblyscript" / "assembly" / "host_fns.ts"
 GO_SRC = ROOT / "go" / "host_fns.go"
 C_SRC = ROOT / "c" / "include" / "pyde" / "host.h"
 

@@ -10,10 +10,11 @@ dependencies. Every extern is annotated with its section in
 Via npm:
 
 ```bash
-npm install --save-dev @pyde-net/host
+npm install @pyde-net/host
 ```
 
-Then import from your contract:
+Then import from your contract via the `/assembly` subpath (the
+AssemblyScript library convention — the same shape as `as-bignum/assembly`):
 
 ```ts
 import {
@@ -22,10 +23,10 @@ import {
   self_address,
   emit_event,
   hash_poseidon2,
-} from "@pyde-net/host";
+} from "@pyde-net/host/assembly";
 ```
 
-Or copy `src/host_fns.ts` directly into your project's `assembly/`
+Or copy `assembly/host_fns.ts` directly into your project's `assembly/`
 directory and import it locally. Both approaches produce identical
 `.wasm` — unused externs are stripped by the `asc` linker's dead-code
 elimination.
