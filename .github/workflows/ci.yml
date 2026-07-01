@@ -53,8 +53,26 @@ jobs:
       - uses: acifani/setup-tinygo@v2
         with:
           tinygo-version: 'latest'
-      - name: build wasi
-        run: tinygo build -target=wasi -o /tmp/host-check.wasm ./go/...
+      # TinyGo needs a main entry point; the pyde-host go package is
+      # library-only. Build a tiny smoke program in a temp dir that
+      # imports the library via a `replace` directive.
+      - name: build smoke program
+        run: |
+          SMOKE=$(mktemp -d)
+          cat > "$SMOKE/go.mod" <<EOF
+          module smoke
+          go 1.21
+          require github.com/pyde-net/pyde-host/go v0.0.0
+          replace github.com/pyde-net/pyde-host/go => $GITHUB_WORKSPACE/go
+          EOF
+          cat > "$SMOKE/main.go" <<'EOF'
+          package main
+
+          import _ "github.com/pyde-net/pyde-host/go"
+
+          func main() {}
+          EOF
+          cd "$SMOKE" && tinygo build -target=wasi -o /tmp/host-check.wasm .
 
   c:
     runs-on: ubuntu-latest
