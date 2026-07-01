@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Also callable from publish.yml so a release gate re-runs the full
+  # matrix against the tag ref before touching any registry.
+  workflow_call:
 
 jobs:
   rust:
@@ -50,8 +53,26 @@ jobs:
       - uses: acifani/setup-tinygo@v2
         with:
           tinygo-version: 'latest'
-      - name: build wasi
-        run: tinygo build -target=wasi -o /tmp/host-check.wasm ./go/...
+      # TinyGo needs a main entry point; the pyde-host go package is
+      # library-only. Build a tiny smoke program in a temp dir that
+      # imports the library via a `replace` directive.
+      - name: build smoke program
+        run: |
+          SMOKE=$(mktemp -d)
+          cat > "$SMOKE/go.mod" <<EOF
+          module smoke
+          go 1.21
+          require github.com/pyde-net/pyde-host/go v0.0.0
+          replace github.com/pyde-net/pyde-host/go => $GITHUB_WORKSPACE/go
+          EOF
+          cat > "$SMOKE/main.go" <<'EOF'
+          package main
+
+          import _ "github.com/pyde-net/pyde-host/go"
+
+          func main() {}
+          EOF
+          cd "$SMOKE" && tinygo build -target=wasi -o /tmp/host-check.wasm .
 
   c:
     runs-on: ubuntu-latest
@@ -62,8 +83,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-17 lld-17
           sudo ln -sf /usr/bin/clang-17 /usr/local/bin/clang
+          sudo ln -sf /usr/bin/clang++-17 /usr/local/bin/clang++
           sudo ln -sf /usr/bin/wasm-ld-17 /usr/local/bin/wasm-ld
-      - name: smoke build
+      - name: C smoke build
         run: |
           cat > /tmp/main.c <<'EOF'
           #include <pyde/host.h>
@@ -77,6 +99,23 @@ jobs:
             -I c/include \
             -o /tmp/host-check.wasm \
             /tmp/main.c
+      # Guards the `extern "C"` block that lets C++ include the header
+      # without hitting name-mangling mismatches against the WASM host
+      # import table. If someone removes the guards, this fails first.
+      - name: C++ smoke build
+        run: |
+          cat > /tmp/main.cpp <<'EOF'
+          #include <pyde/host.h>
+          int main() { return 0; }
+          EOF
+          clang++ \
+            --target=wasm32-unknown-unknown \
+            -nostdlib \
+            -Wl,--no-entry \
+            -Wl,--export-all \
+            -I c/include \
+            -o /tmp/host-check-cpp.wasm \
+            /tmp/main.cpp
 
   parity:
     runs-on: ubuntu-latest

@@ -1,5 +1,21 @@
 name: publish
 
+# Cutting a release:
+#   1. Tag main: `git tag v0.1.0-alpha.4 && git push origin v0.1.0-alpha.4`
+#      → triggers the `push:tags` path below, which runs `check` (full
+#      ci matrix on the tag ref) before any registry is touched. If
+#      any fmt / clippy / test / per-language build / parity fails,
+#      publish jobs are skipped and the release aborts red.
+#   2. OR: `gh workflow run publish.yml -f version=v0.1.0-alpha.4`
+#      → same gate, driven manually. Useful for re-runs after a
+#      transient registry hiccup without re-tagging.
+#
+# Secrets required on the pyde-net/pyde-host repo (Settings → Secrets):
+#   CARGO_REGISTRY_TOKEN  crates.io publish token (Rust)
+#   NPM_TOKEN             npm automation token   (AssemblyScript)
+# The Go publish path uses the built-in GITHUB_TOKEN, no external
+# secret needed — pkg.go.dev picks the tag up automatically.
+
 on:
   workflow_dispatch:
     inputs:
@@ -12,7 +28,15 @@ on:
       - 'v*.*.*'
 
 jobs:
+  # ── Gate: re-run the full CI matrix against the exact ref being
+  # released. `uses: ./.github/workflows/ci.yml` invokes ci.yml as a
+  # reusable workflow; publish jobs `needs: check` so any red job
+  # blocks the release entirely.
+  check:
+    uses: ./.github/workflows/ci.yml
+
   publish-rust:
+    needs: check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -22,16 +46,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      # Dep-order: macros first, pyde-host last (it depends on all three).
+      # --no-verify skips the local rebuild — the `check` gate already
+      # proved the workspace compiles clean on this ref.
       - name: publish pyde-entry-macros
-        run: cargo publish --package pyde-entry-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --package pyde-entry-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --no-verify
       - name: publish pyde-storage-macros
-        run: cargo publish --package pyde-storage-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --package pyde-storage-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --no-verify
       - name: publish pyde-events-macros
-        run: cargo publish --package pyde-events-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --package pyde-events-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --no-verify
       - name: publish pyde-host
-        run: cargo publish --package pyde-host --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --package pyde-host --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --no-verify
 
   publish-npm:
+    needs: check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -52,6 +80,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-go:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
