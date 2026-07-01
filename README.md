@@ -75,8 +75,8 @@ publishing calendar of any one language ecosystem. That means:
 - Every published Rust, AssemblyScript, Go, and C release under the same
   tag corresponds to the same frozen spec revision.
 - Pre-mainnet, releases track the otigen release train. The current
-  version, `0.1.0-alpha.4`, matches the ABI shipped by
-  `otigen 0.1.0-alpha.4`.
+  version, `0.1.0-alpha.5`, matches the ABI shipped by
+  `otigen 0.1.0-alpha.5`.
 - After mainnet, the ABI is under a one-way ratchet: only additions are
   allowed, and additions bump the minor version (`v1.0` → `v1.1`). Removing
   or renaming a host fn — or changing its signature, gas cost, or error

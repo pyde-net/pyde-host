@@ -9,25 +9,26 @@ file and the spec disagree, the spec wins.
 
 # Usage
 
-Pyde does not ship a maintained per-language SDK. Instead, this package
-publishes a single canonical host_fns.go that contract authors copy into
-their own package. The //go:wasmimport directives resolve at wasm
-compile time regardless of Go package name, so the file works verbatim
-once you rewrite the `package pyde` line to match your contract's
-package.
+Install:
 
-Two consumption patterns are supported:
+	go get github.com/pyde-net/pyde-host/go
 
-  - Copy host_fns.go directly into your contract source tree
-    (recommended). Rename the package clause; keep everything else
-    intact. TinyGo's wasm-ld dead-code elimination strips any
-    unused imports from the final .wasm.
+Import and call:
 
-  - `go get github.com/pyde-net/pyde-host/go` and reference this
-    package from a same-package fork. Because the host fns are
-    unexported (lowercase) they cannot be called across package
-    boundaries — the module is published primarily so `go get` can
-    fetch the canonical file for vendoring.
+	import "github.com/pyde-net/pyde-host/go"
+
+	// example: read a storage slot
+	var out [32]byte
+	n := pyde.Sload(
+	    int32(uintptr(unsafe.Pointer(&slot[0]))),
+	    int32(uintptr(unsafe.Pointer(&out[0]))),
+	    32,
+	)
+
+Function names are PascalCase to satisfy Go's export rules. The wire
+names on the underlying //go:wasmimport directives stay lowercase to
+match HOST_FN_ABI_SPEC — TinyGo separates directive name from Go
+identifier, so pyde.Sload imports the wire host fn "sload".
 
 # Toolchain
 

@@ -1,6 +1,6 @@
 {
   "name": "@pyde-net/host",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Canonical Pyde host-function declarations for AssemblyScript contracts. The complete pyde::* ABI a WASM contract can call into.",
   "license": "MIT OR Apache-2.0",
   "repository": {

@@ -3,19 +3,19 @@
 // is declared in HOST_FN_ABI_SPEC §7
 // (https://book.pyde.network/companion/HOST_FN_ABI_SPEC).
 //
-// Why this file is comprehensive: the otigen toolchain doesn't ship a
-// per-language SDK. Authors declare imports directly via
-// //go:wasmimport. Declaring every fn once here means you never have
-// to copy-paste a signature from the spec — anything you need is in
-// this file already.
+// Usage:
 //
-// How to use: copy this file into your contract's own package and
-// change `package pyde` to match. The //go:wasmimport directives make
-// these host imports at wasm-compile time regardless of package name;
-// keeping them unexported (lowercase) means callers in the same
-// package invoke them directly as `sload(...)`, `sstore(...)`, etc.
+//   import "github.com/pyde-net/pyde-host/go" as pyde
 //
-// Pointer convention: every int32 marked as a "*Ptr" parameter is a
+//   pyde.Sload(slotPtr, outPtr, outMaxLen)
+//   pyde.Sstore(slotPtr, valPtr, valLen)
+//   pyde.EmitEvent(topicsPtr, topicsCount, dataPtr, dataLen)
+//
+// Function names are PascalCase (Go export convention); the underlying
+// wire names in the //go:wasmimport directive stay lowercase to match
+// HOST_FN_ABI_SPEC. TinyGo separates the two.
+//
+// Pointer convention: every int32 marked with a "Ptr" suffix is a
 // 32-bit offset into linear memory. Use:
 //
 //   int32(uintptr(unsafe.Pointer(&buf[0])))
@@ -25,7 +25,8 @@
 //
 // Unused declarations are stripped by TinyGo's wasm-ld dead-code
 // elimination — the final .wasm only imports what you actually call.
-// Safe to keep them all.
+// Safe to depend on this package even if you use only a handful of
+// host fns.
 
 package pyde
 
@@ -37,29 +38,29 @@ package pyde
 // keys are always 32 bytes — derive them with hash_poseidon2 using
 // the canonical recipe `slot = Poseidon2(self_address || field || key)`.
 
-// sload reads a storage slot. Writes up to outMaxLen bytes; returns
+// Sload reads a storage slot. Writes up to outMaxLen bytes; returns
 // the actual length (so callers can detect truncation), or -1 for a
 // missing slot.
 //
 // gas: 100 base + 1 per byte copied.
 //
 //go:wasmimport pyde sload
-func sload(slotPtr int32, outPtr int32, outMaxLen int32) int32
+func Sload(slotPtr int32, outPtr int32, outMaxLen int32) int32
 
-// sstore writes valLen bytes to the slot. Capped at 16 KB.
+// Sstore writes valLen bytes to the slot. Capped at 16 KB.
 //
 // gas: 5,000 base + 32 per byte. ERR_FORBIDDEN from a view-attributed
 // function traps.
 //
 //go:wasmimport pyde sstore
-func sstore(slotPtr int32, valPtr int32, valLen int32)
+func Sstore(slotPtr int32, valPtr int32, valLen int32)
 
-// sdelete clears a storage slot (a subsequent sload returns -1).
+// Sdelete clears a storage slot (a subsequent sload returns -1).
 //
 // gas: 5,000 base. No refund (PIP-4 gas-no-refund).
 //
 //go:wasmimport pyde sdelete
-func sdelete(slotPtr int32)
+func Sdelete(slotPtr int32)
 
 // ── Typed storage (schema-derived slots) ─────────────────────────────
 //
@@ -69,108 +70,108 @@ func sdelete(slotPtr int32)
 // byte length against the field's declared type. Gas: sstore/sload
 // base + a small surcharge for schema lookup + type validation.
 
-// sstore_scalar writes to a declared scalar field. Slot derives as
+// SstoreScalar writes to a declared scalar field. Slot derives as
 // Poseidon2(self_address || field_name).
 //
 //go:wasmimport pyde sstore_scalar
-func sstore_scalar(fieldPtr int32, fieldLen int32, valuePtr int32, valueLen int32) int32
+func SstoreScalar(fieldPtr int32, fieldLen int32, valuePtr int32, valueLen int32) int32
 
-// sload_scalar reads a scalar field. Returns actual value length, or
+// SloadScalar reads a scalar field. Returns actual value length, or
 // -1 if never written.
 //
 //go:wasmimport pyde sload_scalar
-func sload_scalar(fieldPtr int32, fieldLen int32, outPtr int32, outMaxLen int32) int32
+func SloadScalar(fieldPtr int32, fieldLen int32, outPtr int32, outMaxLen int32) int32
 
-// sdelete_scalar clears a scalar field.
+// SdeleteScalar clears a scalar field.
 //
 //go:wasmimport pyde sdelete_scalar
-func sdelete_scalar(fieldPtr int32, fieldLen int32) int32
+func SdeleteScalar(fieldPtr int32, fieldLen int32) int32
 
-// sstore_map1 writes to a 1-key map field. Slot derives as
+// SstoreMap1 writes to a 1-key map field. Slot derives as
 // Poseidon2(self_address || field_name || key).
 //
 //go:wasmimport pyde sstore_map1
-func sstore_map1(fieldPtr int32, fieldLen int32, keyPtr int32, keyLen int32, valuePtr int32, valueLen int32) int32
+func SstoreMap1(fieldPtr int32, fieldLen int32, keyPtr int32, keyLen int32, valuePtr int32, valueLen int32) int32
 
-// sload_map1 reads a 1-key map field.
+// SloadMap1 reads a 1-key map field.
 //
 //go:wasmimport pyde sload_map1
-func sload_map1(fieldPtr int32, fieldLen int32, keyPtr int32, keyLen int32, outPtr int32, outMaxLen int32) int32
+func SloadMap1(fieldPtr int32, fieldLen int32, keyPtr int32, keyLen int32, outPtr int32, outMaxLen int32) int32
 
-// sdelete_map1 clears a 1-key map entry.
+// SdeleteMap1 clears a 1-key map entry.
 //
 //go:wasmimport pyde sdelete_map1
-func sdelete_map1(fieldPtr int32, fieldLen int32, keyPtr int32, keyLen int32) int32
+func SdeleteMap1(fieldPtr int32, fieldLen int32, keyPtr int32, keyLen int32) int32
 
-// sstore_map2 writes to a 2-key map field. Slot derives as
+// SstoreMap2 writes to a 2-key map field. Slot derives as
 // Poseidon2(self_address || field_name || k1 || k2).
 //
 //go:wasmimport pyde sstore_map2
-func sstore_map2(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32, valuePtr int32, valueLen int32) int32
+func SstoreMap2(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32, valuePtr int32, valueLen int32) int32
 
-// sload_map2 reads a 2-key map field.
+// SloadMap2 reads a 2-key map field.
 //
 //go:wasmimport pyde sload_map2
-func sload_map2(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32, outPtr int32, outMaxLen int32) int32
+func SloadMap2(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32, outPtr int32, outMaxLen int32) int32
 
-// sdelete_map2 clears a 2-key map entry.
+// SdeleteMap2 clears a 2-key map entry.
 //
 //go:wasmimport pyde sdelete_map2
-func sdelete_map2(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32) int32
+func SdeleteMap2(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32) int32
 
-// sstore_map3 writes to a 3-key map field. Slot derives as
+// SstoreMap3 writes to a 3-key map field. Slot derives as
 // Poseidon2(self_address || field_name || k1 || k2 || k3).
 //
 //go:wasmimport pyde sstore_map3
-func sstore_map3(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32, k3Ptr int32, k3Len int32, valuePtr int32, valueLen int32) int32
+func SstoreMap3(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32, k3Ptr int32, k3Len int32, valuePtr int32, valueLen int32) int32
 
-// sload_map3 reads a 3-key map field.
+// SloadMap3 reads a 3-key map field.
 //
 //go:wasmimport pyde sload_map3
-func sload_map3(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32, k3Ptr int32, k3Len int32, outPtr int32, outMaxLen int32) int32
+func SloadMap3(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32, k3Ptr int32, k3Len int32, outPtr int32, outMaxLen int32) int32
 
-// sdelete_map3 clears a 3-key map entry.
+// SdeleteMap3 clears a 3-key map entry.
 //
 //go:wasmimport pyde sdelete_map3
-func sdelete_map3(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32, k3Ptr int32, k3Len int32) int32
+func SdeleteMap3(fieldPtr int32, fieldLen int32, k1Ptr int32, k1Len int32, k2Ptr int32, k2Len int32, k3Ptr int32, k3Len int32) int32
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.2 Account & balance
 // ─────────────────────────────────────────────────────────────────────
 
-// balance reads another account's native-PYDE balance.
+// Balance reads another account's native-PYDE balance.
 //
 // addrPtr:        32-byte address.
 // balanceOutPtr:  16-byte buffer (uint128 LE).
 // gas: 100 base.
 //
 //go:wasmimport pyde balance
-func balance(addrPtr int32, balanceOutPtr int32) int32
+func Balance(addrPtr int32, balanceOutPtr int32) int32
 
-// transfer sends native PYDE from this contract's balance.
+// Transfer sends native PYDE from this contract's balance.
 //
 // toPtr:      32-byte recipient.
 // amountPtr:  16-byte u128 amount (LE).
 // gas: 7,000 base. Reverts with ERR_INSUFFICIENT_BALANCE if caller's
-// balance < amount.
+// Balance < amount.
 //
 //go:wasmimport pyde transfer
-func transfer(toPtr int32, amountPtr int32) int32
+func Transfer(toPtr int32, amountPtr int32) int32
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.3 Execution context
 // ─────────────────────────────────────────────────────────────────────
 
-// caller writes the immediate caller's 32-byte address. For top-level
+// Caller writes the immediate caller's 32-byte address. For top-level
 // transactions equal to origin(); for nested cross_call's the calling
 // contract.
 //
 // gas: 5 base.
 //
 //go:wasmimport pyde caller
-func caller(addrOutPtr int32) int32
+func Caller(addrOutPtr int32) int32
 
-// origin writes the externally-owned account that signed the tx,
+// Origin writes the externally-owned account that signed the tx,
 // regardless of call nesting. Use sparingly: tx.origin checks are
 // the source of the classic phishing footgun. Prefer caller() for
 // authorization.
@@ -178,24 +179,24 @@ func caller(addrOutPtr int32) int32
 // gas: 5 base.
 //
 //go:wasmimport pyde origin
-func origin(addrOutPtr int32) int32
+func Origin(addrOutPtr int32) int32
 
-// self_address writes this contract's own address.
+// SelfAddress writes this contract's own address.
 //
 // gas: 5 base.
 //
 //go:wasmimport pyde self_address
-func self_address(addrOutPtr int32) int32
+func SelfAddress(addrOutPtr int32) int32
 
-// wave_id returns Pyde's consensus-round counter (uint64),
+// WaveId returns Pyde's consensus-round counter (uint64),
 // monotonically increasing.
 //
 // gas: 2 base.
 //
 //go:wasmimport pyde wave_id
-func wave_id() int64
+func WaveId() int64
 
-// wave_timestamp returns the wave's canonical timestamp in seconds
+// WaveTimestamp returns the wave's canonical timestamp in seconds
 // since Unix epoch. Committee-attested, identical across validators.
 // Use this instead of Go's time package (which doesn't exist in
 // wasm-unknown anyway).
@@ -203,51 +204,51 @@ func wave_id() int64
 // gas: 2 base.
 //
 //go:wasmimport pyde wave_timestamp
-func wave_timestamp() int64
+func WaveTimestamp() int64
 
-// chain_id returns the chain identifier (1 = mainnet, 31337 = devnet).
+// ChainId returns the chain identifier (1 = mainnet, 31337 = devnet).
 //
 // gas: 2 base.
 //
 //go:wasmimport pyde chain_id
-func chain_id() int64
+func ChainId() int64
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.4 Transaction context
 // ─────────────────────────────────────────────────────────────────────
 
-// tx_hash writes the 32-byte Blake3 hash of the executing tx.
+// TxHash writes the 32-byte Blake3 hash of the executing tx.
 //
 // gas: 5 base.
 //
 //go:wasmimport pyde tx_hash
-func tx_hash(hashOutPtr int32) int32
+func TxHash(hashOutPtr int32) int32
 
-// tx_value writes the PYDE value attached to the current call
+// TxValue writes the PYDE value attached to the current call
 // (uint128 LE in 16 bytes). Always zero for non-payable functions.
 //
 // gas: 5 base.
 //
 //go:wasmimport pyde tx_value
-func tx_value(valueOutPtr int32) int32
+func TxValue(valueOutPtr int32) int32
 
-// tx_gas_remaining returns the remaining gas (fuel) in the current
+// TxGasRemaining returns the remaining gas (fuel) in the current
 // call frame.
 //
 // gas: 2 base.
 //
 //go:wasmimport pyde tx_gas_remaining
-func tx_gas_remaining() int64
+func TxGasRemaining() int64
 
-// calldata_size returns the total byte-length of the current
+// CalldataSize returns the total byte-length of the current
 // invocation's calldata buffer.
 //
 // gas: 2 base.
 //
 //go:wasmimport pyde calldata_size
-func calldata_size() int32
+func CalldataSize() int32
 
-// calldata_copy copies calldata into outPtr using the in/out
+// CalldataCopy copies calldata into outPtr using the in/out
 // length convention:
 //   - On call: the u32 at outLenPtr holds the max bytes the
 //     contract is willing to accept.
@@ -260,13 +261,13 @@ func calldata_size() int32
 // full buffer in one shot.
 //
 //go:wasmimport pyde calldata_copy
-func calldata_copy(outPtr int32, outLenPtr int32) int32
+func CalldataCopy(outPtr int32, outLenPtr int32) int32
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.5 Events
 // ─────────────────────────────────────────────────────────────────────
 
-// emit_event appends an event log entry to the transaction receipt.
+// EmitEvent appends an event log entry to the transaction receipt.
 //
 // topicsCount: 1..=4. topic[0] is conventionally
 // Blake3(canonical_event_signature). Indexed fields go in topics[1..];
@@ -275,7 +276,7 @@ func calldata_copy(outPtr int32, outLenPtr int32) int32
 // gas: 100 base + 50 × topicsCount + 8 per data byte.
 //
 //go:wasmimport pyde emit_event
-func emit_event(topicsPtr int32, topicsCount int32, dataPtr int32, dataLen int32) int32
+func EmitEvent(topicsPtr int32, topicsCount int32, dataPtr int32, dataLen int32) int32
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.6 Hashing primitives
@@ -287,38 +288,38 @@ func emit_event(topicsPtr int32, topicsCount int32, dataPtr int32, dataLen int32
 // instantiates the contract; the spec / runner divergence is tracked
 // for follow-up.
 
-// hash_blake3 computes Blake3 over inPtr[..inLen], writes 32 bytes
+// HashBlake3 computes Blake3 over inPtr[..inLen], writes 32 bytes
 // to outPtr. General-purpose hash — address derivation, event topic-0,
 // content addressing.
 //
 // gas: 15 base + 3 per word (8 bytes).
 //
 //go:wasmimport pyde hash_blake3
-func hash_blake3(inPtr int32, inLen int32, outPtr int32)
+func HashBlake3(inPtr int32, inLen int32, outPtr int32)
 
-// hash_poseidon2 computes Poseidon2 over inPtr[..inLen], writes 32
+// HashPoseidon2 computes Poseidon2 over inPtr[..inLen], writes 32
 // bytes to outPtr. ZK-friendly but more expensive than Blake3 in
 // native execution. Use for slot derivation + state-root commitments.
 //
 // gas: 100 base + 30 per word.
 //
 //go:wasmimport pyde hash_poseidon2
-func hash_poseidon2(inPtr int32, inLen int32, outPtr int32)
+func HashPoseidon2(inPtr int32, inLen int32, outPtr int32)
 
-// hash_keccak256 computes Keccak256. Provided for cross-chain interop
+// HashKeccak256 computes Keccak256. Provided for cross-chain interop
 // (verifying Ethereum Merkle Patricia proofs). Pyde itself doesn't
 // use Keccak natively.
 //
 // gas: 30 base + 6 per word.
 //
 //go:wasmimport pyde hash_keccak256
-func hash_keccak256(inPtr int32, inLen int32, outPtr int32)
+func HashKeccak256(inPtr int32, inLen int32, outPtr int32)
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.7 Post-quantum cryptography
 // ─────────────────────────────────────────────────────────────────────
 
-// falcon_verify verifies a FALCON-512 signature.
+// FalconVerify verifies a FALCON-512 signature.
 //
 // pkPtr:           ~897-byte FALCON-512 public key.
 // msgPtr/msgLen:   arbitrary message.
@@ -327,20 +328,20 @@ func hash_keccak256(inPtr int32, inLen int32, outPtr int32)
 // Returns 0 if valid, ERR_SIGNATURE_INVALID otherwise.
 //
 //go:wasmimport pyde falcon_verify
-func falcon_verify(pkPtr int32, msgPtr int32, msgLen int32, sigPtr int32, sigLen int32) int32
+func FalconVerify(pkPtr int32, msgPtr int32, msgLen int32, sigPtr int32, sigLen int32) int32
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.8 Cross-contract calls
 // ─────────────────────────────────────────────────────────────────────
 
-// cross_call synchronously calls into another contract.
+// CrossCall synchronously calls into another contract.
 //
 // gas: 1,000 base + 8 per calldata byte + sub-call gas_used.
 // Sub-call runs in a nested overlay — state changes merge on success
 // or roll back on revert.
 //
 //go:wasmimport pyde cross_call
-func cross_call(
+func CrossCall(
 	targetPtr int32,
 	fnNamePtr int32, fnNameLen int32,
 	calldataPtr int32, calldataLen int32,
@@ -350,14 +351,14 @@ func cross_call(
 	returnDataOutLenPtr int32,
 ) int32
 
-// cross_call_static is the view-only variant of cross_call. Target
+// CrossCallStatic is the view-only variant of cross_call. Target
 // must be a view function. Sub-call is FREE for the caller — see
 // HOST_FN_ABI_SPEC §7.8.
 //
 // gas: 50 base for dispatch.
 //
 //go:wasmimport pyde cross_call_static
-func cross_call_static(
+func CrossCallStatic(
 	targetPtr int32,
 	fnNamePtr int32, fnNameLen int32,
 	calldataPtr int32, calldataLen int32,
@@ -366,14 +367,14 @@ func cross_call_static(
 	returnDataOutLenPtr int32,
 ) int32
 
-// delegate_call executes target's code in THIS contract's storage
+// DelegateCall executes target's code in THIS contract's storage
 // context. Used by proxies / upgradeable contracts. See
 // HOST_FN_ABI_SPEC §7.8 for the security model.
 //
 // gas: 1,200 base + 8 per calldata byte + sub-call gas_used.
 //
 //go:wasmimport pyde delegate_call
-func delegate_call(
+func DelegateCall(
 	targetPtr int32,
 	fnNamePtr int32, fnNameLen int32,
 	calldataPtr int32, calldataLen int32,
@@ -386,7 +387,7 @@ func delegate_call(
 // §7.9 Halt operations
 // ─────────────────────────────────────────────────────────────────────
 
-// pyde_return sets this call's return data and exits successfully.
+// PydeReturn sets this call's return data and exits successfully.
 // Useful for functions that return variable-length data — the WASM
 // ABI return value is a single primitive; this lets you "return"
 // bytes via the caller's returnDataOut buffer.
@@ -394,9 +395,9 @@ func delegate_call(
 // Wire name: "return". Renamed here because `return` is a Go keyword.
 //
 //go:wasmimport pyde return
-func pyde_return(dataPtr int32, dataLen int32)
+func PydeReturn(dataPtr int32, dataLen int32)
 
-// revert reverts the current call frame. All state changes since the
+// Revert reverts the current call frame. All state changes since the
 // call started are discarded. Reason bytes surface as the failure
 // payload to the caller (or to the tx receipt if top-level).
 //
@@ -404,26 +405,26 @@ func pyde_return(dataPtr int32, dataLen int32)
 // then add `for {}` or `panic("unreachable")` after for control-flow.
 //
 //go:wasmimport pyde revert
-func revert(reasonPtr int32, reasonLen int32)
+func Revert(reasonPtr int32, reasonLen int32)
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.10 Explicit gas metering
 // ─────────────────────────────────────────────────────────────────────
 
-// consume_gas charges `amount` units of gas explicitly. Used by
+// ConsumeGas charges `amount` units of gas explicitly. Used by
 // contracts that perform off-fuel work (synchronous loops bounded by
 // external data) and want the cost visible in receipts.
 //
 // gas: 2 base + amount.
 //
 //go:wasmimport pyde consume_gas
-func consume_gas(amount int64) int32
+func ConsumeGas(amount int64) int32
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.11 VRF beacon
 // ─────────────────────────────────────────────────────────────────────
 
-// beacon_get writes the current wave's committee-derived VRF beacon
+// BeaconGet writes the current wave's committee-derived VRF beacon
 // (32 bytes). Deterministic, public randomness. Publicly predictable
 // within a wave — use threshold encryption if you need
 // adversary-private randomness.
@@ -431,4 +432,4 @@ func consume_gas(amount int64) int32
 // gas: 50 base.
 //
 //go:wasmimport pyde beacon_get
-func beacon_get(outPtr int32) int32
+func BeaconGet(outPtr int32) int32
