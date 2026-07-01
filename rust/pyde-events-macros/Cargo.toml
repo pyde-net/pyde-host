@@ -1,0 +1,22 @@
+[package]
+name = "pyde-events-macros"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "declare_events!() proc macro — reads otigen.toml's [events.*] blocks at compile time and emits a typed `mod events` with one struct + `emit()` impl per declared event."
+keywords = ["pyde", "wasm", "blockchain", "contract", "macro"]
+categories = ["wasm", "no-std"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+toml = { workspace = true }
+serde = { workspace = true }
+# Compile-time Blake3 of the event signature string. Runs on the host,
+# not the contract — so this dep doesn't reach the wasm bundle.
+blake3 = { workspace = true }

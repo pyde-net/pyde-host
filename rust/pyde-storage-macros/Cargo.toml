@@ -1,0 +1,19 @@
+[package]
+name = "pyde-storage-macros"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "declare_storage!() proc macro — reads otigen.toml at compile time and emits a typed `mod storage` accessor over the 12 typed-storage host fns."
+keywords = ["pyde", "wasm", "blockchain", "contract", "macro"]
+categories = ["wasm", "no-std"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+toml = { workspace = true }
+serde = { workspace = true }

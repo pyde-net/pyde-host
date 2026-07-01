@@ -1,0 +1,18 @@
+[package]
+name = "pyde-entry-macros"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "#[pyde::entry] proc macro — wraps a Rust function in the calldata-decode + return-wrap shim required by Pyde's () -> () entry ABI."
+keywords = ["pyde", "wasm", "blockchain", "contract", "macro"]
+categories = ["wasm", "no-std"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"

@@ -1,0 +1,75 @@
+name: publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'version tag (e.g. v0.1.0-alpha.4)'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish-rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: publish pyde-entry-macros
+        run: cargo publish --package pyde-entry-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: publish pyde-storage-macros
+        run: cargo publish --package pyde-storage-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: publish pyde-events-macros
+        run: cargo publish --package pyde-events-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: publish pyde-host
+        run: cargo publish --package pyde-host --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-npm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: assemblyscript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: assemblyscript/package-lock.json
+      - name: install
+        run: npm ci
+      - name: publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: tag go submodule
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "go/${{ steps.version.outputs.tag }}"
+          git push origin "go/${{ steps.version.outputs.tag }}"

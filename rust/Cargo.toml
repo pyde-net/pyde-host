@@ -1,0 +1,31 @@
+# pyde-host — canonical Pyde contract ABI in Rust.
+#
+# Host-function declarations, ergonomic wrappers, and the proc-macros
+# a Rust contract needs to talk to a Pyde chain. Split into four
+# crates so the ABI surface stays independent of the macro crates
+# authors pull in via `#[pyde::entry]` / `declare_storage!()` /
+# `declare_events!()`.
+#
+# Companion sibling directories hold the AssemblyScript, Go, and C
+# language bindings; this workspace is Rust-only.
+
+[workspace]
+members = [
+    "pyde-host",
+    "pyde-entry-macros",
+    "pyde-storage-macros",
+    "pyde-events-macros",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0-alpha.4"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/pyde-net/pyde-host"
+authors = ["Pyde Network <info@pyde.network>"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+blake3 = "1"

@@ -1,0 +1,23 @@
+# Rust
+/target/
+**/target/
+**/*.rs.bk
+Cargo.lock
+
+# AssemblyScript / npm
+node_modules/
+dist/
+build/
+
+# C
+*.o
+*.obj
+*.a
+*.wasm
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,30 @@
+[package]
+name = "pyde-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Host-function declarations for Pyde contracts. The complete `pyde::*` ABI a wasm32 contract can call into."
+keywords = ["pyde", "wasm", "blockchain", "contract"]
+categories = ["wasm", "no-std"]
+
+[features]
+default = ["alloc"]
+# Wires `dlmalloc` as the contract's `#[global_allocator]`. Required
+# for `Vec` / `String` / any heap allocation. The macro layer
+# (`#[pyde::entry]`) emits `Vec`-using code, so contracts that opt
+# into the macro need this feature on (it's the default).
+#
+# Disabling: `pyde-host = { features = [] }`. Authors who manage
+# their own allocator or stay strictly stack-allocated can opt out.
+alloc = ["dep:dlmalloc"]
+
+[dependencies]
+dlmalloc = { version = "0.2", features = ["global"], optional = true }
+pyde-entry-macros = { path = "../pyde-entry-macros", version = "0.1.0-alpha.4" }
+pyde-storage-macros = { path = "../pyde-storage-macros", version = "0.1.0-alpha.4" }
+pyde-events-macros = { path = "../pyde-events-macros", version = "0.1.0-alpha.4" }
+# `default-features = false` keeps it no_std-friendly inside the
+# contract; `derive` is host-side only and pulls in no wasm code.
+borsh = { version = "1.5", default-features = false }

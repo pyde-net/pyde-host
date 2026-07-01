@@ -1,0 +1,89 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: test
+        run: cargo test --workspace
+      - name: wasm sanity build
+        run: cargo build --package pyde-host --target wasm32-unknown-unknown --release
+
+  assemblyscript:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: assemblyscript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: assemblyscript/package-lock.json
+      - name: install
+        run: npm ci
+      - name: compile
+        run: npx asc src/index.ts --outFile /tmp/host-check.wasm --target release
+
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: acifani/setup-tinygo@v2
+        with:
+          tinygo-version: 'latest'
+      - name: build wasi
+        run: tinygo build -target=wasi -o /tmp/host-check.wasm ./go/...
+
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install clang + wasm-ld
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-17 lld-17
+          sudo ln -sf /usr/bin/clang-17 /usr/local/bin/clang
+          sudo ln -sf /usr/bin/wasm-ld-17 /usr/local/bin/wasm-ld
+      - name: smoke build
+        run: |
+          cat > /tmp/main.c <<'EOF'
+          #include <pyde/host.h>
+          int main(void) { return 0; }
+          EOF
+          clang \
+            --target=wasm32-unknown-unknown \
+            -nostdlib \
+            -Wl,--no-entry \
+            -Wl,--export-all \
+            -I c/include \
+            -o /tmp/host-check.wasm \
+            /tmp/main.c
+
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: check parity
+        run: python3 scripts/check_parity.py
