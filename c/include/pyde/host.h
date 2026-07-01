@@ -22,6 +22,14 @@
 
 #include <stdint.h>
 
+// C++ compilers apply name mangling to declarations by default; the
+// WASM host-import table matches by unmangled symbol name, so C++
+// code needs `extern "C"` linkage on every host fn declaration below.
+// The guard is a no-op for C compilers.
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // All pyde::* imports go through this macro for consistency.
 #define PYDE_HOST_FN(name) \
     __attribute__((import_module("pyde"), import_name(#name)))
@@ -241,5 +249,9 @@ extern int32_t consume_gas(int64_t amount);
 
 PYDE_HOST_FN(beacon_get)
 extern int32_t beacon_get(uint8_t* out_ptr);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
 #endif // PYDE_HOST_H
