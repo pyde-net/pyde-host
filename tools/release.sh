@@ -79,7 +79,7 @@ run_rust() {
 run_assemblyscript() {
     step "assemblyscript: asc compile"
     (cd assemblyscript && [[ -d node_modules ]] || npm ci >/dev/null 2>&1)
-    (cd assemblyscript && npx --no-install asc src/index.ts --outFile /tmp/host-check-as.wasm --target release) \
+    (cd assemblyscript && npx --no-install asc assembly/index.ts --outFile /tmp/host-check-as.wasm --target release) \
         && ok "asc compile clean" || { fail "asc"; return 1; }
 }
 

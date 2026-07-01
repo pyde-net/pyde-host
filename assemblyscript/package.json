@@ -1,6 +1,6 @@
 {
   "name": "@pyde-net/host",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "description": "Canonical Pyde host-function declarations for AssemblyScript contracts. The complete pyde::* ABI a WASM contract can call into.",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -14,13 +14,13 @@
     "contract",
     "assemblyscript"
   ],
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "assembly/index.ts",
+  "types": "assembly/index.ts",
   "files": [
-    "src/",
+    "assembly/",
     "README.md"
   ],
   "peerDependencies": {
-    "assemblyscript": "^0.27.0"
+    "assemblyscript": ">=0.27.0"
   }
 }

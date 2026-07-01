@@ -44,7 +44,7 @@ jobs:
       - name: install
         run: npm ci
       - name: compile
-        run: npx asc src/index.ts --outFile /tmp/host-check.wasm --target release
+        run: npx asc assembly/index.ts --outFile /tmp/host-check.wasm --target release
 
   go:
     runs-on: ubuntu-latest
