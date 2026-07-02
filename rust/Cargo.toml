@@ -23,7 +23,7 @@ version = "0.1.0-alpha.6"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/pyde-net/pyde-host"
-authors = ["Pyde Network <info@pyde.network>"]
+authors = ["zarah <zarah@pyde.network>"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
