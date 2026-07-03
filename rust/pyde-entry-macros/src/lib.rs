@@ -240,7 +240,47 @@ fn expand_entry(input: ItemFn) -> Result<TokenStream2, syn::Error> {
     inner_fn.vis = syn::Visibility::Inherited;
     inner_fn.attrs.clear();
 
+    // ── Signature record for toolchain cross-checking ───────────
+    //
+    // Emit the TRUE Rust signature into a `pyde.sig.v1` custom
+    // section so `otigen build` can verify the manifest's declared
+    // `[functions.<fn>] inputs / outputs` against the code instead of
+    // trusting hand-written metadata. One length-prefixed text record
+    // per entry — the linker concatenates every entry's static into a
+    // single custom section. Format:
+    //
+    //   <name>(<RustTy>,<RustTy>)->[RustTy];
+    //
+    // Types are the normalized token strings of the user's own
+    // annotations (whitespace stripped); the toolchain owns the
+    // Rust-type → manifest-token mapping. Tools that don't know the
+    // section ignore it; chains never see it (otigen strips nothing —
+    // it's ignored by the engine's import/export validation, which
+    // only inspects imports, exports, and `pyde.abi`).
+    let sig_record = {
+        let params = typed_args
+            .iter()
+            .map(|(_, ty)| normalize_type(ty))
+            .collect::<Vec<_>>()
+            .join(",");
+        let ret = match &input.sig.output {
+            ReturnType::Default => String::new(),
+            ReturnType::Type(_, ty) if is_unit(ty) => String::new(),
+            ReturnType::Type(_, ty) => normalize_type(ty),
+        };
+        format!("{user_fn_name}({params})->{ret};")
+    };
+    let sig_bytes = sig_record.as_bytes();
+    let sig_len = sig_bytes.len();
+    let sig_static = format_ident!("__PYDE_SIG_{}", user_fn_name);
+    let sig_byte_tokens = sig_bytes.iter().map(|b| quote! { #b });
+
     Ok(quote! {
+        #[used]
+        #[link_section = "pyde.sig.v1"]
+        #[doc(hidden)]
+        static #sig_static: [u8; #sig_len] = [ #( #sig_byte_tokens ),* ];
+
         #( #user_fn_attrs )*
         #[no_mangle]
         #user_fn_vis extern "C" fn #user_fn_name() {
@@ -250,6 +290,14 @@ fn expand_entry(input: ItemFn) -> Result<TokenStream2, syn::Error> {
             #invocation
         }
     })
+}
+
+/// Render a `syn::Type` as its user-written token string with all
+/// whitespace stripped — `Vec < u64 >` → `Vec<u64>` — so the record
+/// format is stable regardless of formatting.
+fn normalize_type(ty: &Type) -> String {
+    let raw = quote::quote!(#ty).to_string();
+    raw.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
 /// True iff `ty` is the unit type `()` (in any of its syntactic shapes).
