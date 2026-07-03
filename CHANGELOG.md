@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project's versioning tracks the `HOST_FN_ABI_SPEC` version — see
 [`README.md`](./README.md#versioning) for the exact policy.
 
+## [0.1.0-alpha.7] — 2026-07-03
+
+### Added
+- `#[pyde::entry]` records each entry's true Rust signature into a
+  `pyde.sig.v1` custom section (one text record per entry, linker-
+  concatenated). `otigen build` cross-checks the manifest's declared
+  `[functions.*]` inputs/outputs against these records and strips the
+  section at bundle time, so a manifest that lies about a signature
+  fails the build instead of producing garbage calldata at runtime.
+  Tools that don't know the section ignore it; the chain never sees it.
+
 ## [0.1.0-alpha.6] — 2026-07-01
 
 ### Changed
