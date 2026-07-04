@@ -279,6 +279,9 @@ fn expand_entry(input: ItemFn) -> Result<TokenStream2, syn::Error> {
         #[used]
         #[link_section = "pyde.sig.v1"]
         #[doc(hidden)]
+        // The name embeds the entry fn's name (lowercase by convention), so
+        // silence non_upper_case_globals for this generated marker.
+        #[allow(non_upper_case_globals)]
         static #sig_static: [u8; #sig_len] = [ #( #sig_byte_tokens ),* ];
 
         #( #user_fn_attrs )*
