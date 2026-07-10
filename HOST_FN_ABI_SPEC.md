@@ -1881,10 +1881,11 @@ struct WaveCommitRecord {
     tx_count:       u32,
     events_count:   u32,                             // total events in this wave
     gas_used:       u128,
+    base_fee:       u128,                            // quanta/gas that priced this wave
 }
 ```
 
-The wave commit record is what the committee threshold-signs as part of the `HardFinalityCert`. `events_root` and `events_bloom` therefore inherit consensus-level integrity.
+The wave commit record is what the committee threshold-signs as part of the `HardFinalityCert`. `events_root`, `events_bloom`, and `base_fee` therefore inherit consensus-level integrity — `base_fee` is the pre-adjustment EIP-1559 fee each tx paid `gas_used × base_fee` against, carried on the record so a restarting node restores it exactly rather than reseeding from the genesis floor.
 
 #### 15.2.1 events_root
 
