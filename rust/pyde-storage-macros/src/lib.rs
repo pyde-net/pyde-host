@@ -68,6 +68,7 @@ use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use serde::Deserialize;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -86,6 +87,14 @@ use std::path::PathBuf;
 struct ManifestRoot {
     #[serde(default)]
     state: Option<StateBlock>,
+    // `[types.Name]` blocks. Only the NAMES matter here — a custom type
+    // lowers to opaque borsh bytes (a `super::Name` Rust type) regardless
+    // of its field layout — so the value shape is captured opaquely. The
+    // name set lets a bare `Order` scalar resolve exactly the way the
+    // bundle's ABI builder resolves it, so the two never disagree on
+    // whether a token is a custom type or a typo.
+    #[serde(default)]
+    types: BTreeMap<String, toml::Value>,
 }
 
 #[derive(Deserialize)]
@@ -137,12 +146,26 @@ enum Scalar {
 }
 
 impl Scalar {
-    /// Parse a TOML type token. Mirrors `otigen-abi::build::parse_scalar_type`
-    /// so author-facing tokens stay identical between macro + bundle.
+    /// Parse a TOML type token with no `[types]` catalog in scope. A bare
+    /// custom name (`Order`) can't be told apart from a typo without the
+    /// catalog, so this rejects it; only the explicit `struct(Order)`
+    /// form resolves. Convenience wrapper for tests dealing only in
+    /// primitives — production goes through [`parse_scoped`] with the
+    /// manifest's catalog.
+    #[cfg(test)]
     fn parse(token: &str) -> Result<Self, String> {
+        Self::parse_scoped(token, &BTreeSet::new())
+    }
+
+    /// Parse a TOML type token. Mirrors `otigen-abi::build::parse_scalar_type`
+    /// so author-facing tokens stay identical between macro + bundle. A
+    /// custom type declared in `[types.Name]` resolves either bare (`Order`)
+    /// or as `struct(Order)`; both spellings are equivalent, matching how a
+    /// custom type reads in a function signature.
+    fn parse_scoped(token: &str, known: &BTreeSet<String>) -> Result<Self, String> {
         let token = token.trim();
         if let Some(inner) = token.strip_prefix("vec(").and_then(|s| s.strip_suffix(')')) {
-            return Ok(Scalar::Vec(Box::new(Scalar::parse(inner)?)));
+            return Ok(Scalar::Vec(Box::new(Scalar::parse_scoped(inner, known)?)));
         }
         // `struct(<TypeName>)` — author-defined borsh-codable type.
         // The bare ident inside the parens is the Rust type the
@@ -191,7 +214,19 @@ impl Scalar {
             "bytes32" => Scalar::Hash32,
             "bytes" => Scalar::Bytes,
             "string" => Scalar::String,
-            other => return Err(format!("unknown scalar type `{other}`")),
+            other => {
+                // Bare custom type — accepted only when declared in
+                // `[types.<other>]`, exactly like the bundle's ABI builder.
+                // (`struct(Order)` is the explicit spelling handled above;
+                // this is the bare `Order` alias.) A name that isn't in the
+                // catalog is a typo, not a type — reject it cleanly rather
+                // than emit a `super::<typo>` reference that fails later
+                // with a confusing "cannot find type" error.
+                if is_valid_ident(other) && known.contains(other) {
+                    return Ok(Scalar::Custom(other.to_owned()));
+                }
+                return Err(format!("unknown scalar type `{other}`"));
+            }
         })
     }
 
@@ -275,7 +310,15 @@ enum FieldKind {
     Map(Vec<Scalar>),
 }
 
+/// No-catalog convenience wrapper for tests that declare no custom types.
+/// Production goes through [`lower_fields_scoped`] with the manifest's
+/// `[types]` catalog.
+#[cfg(test)]
 fn lower_fields(raw: &[RawField]) -> Result<Vec<Field>, String> {
+    lower_fields_scoped(raw, &BTreeSet::new())
+}
+
+fn lower_fields_scoped(raw: &[RawField], known: &BTreeSet<String>) -> Result<Vec<Field>, String> {
     let mut out = Vec::with_capacity(raw.len());
     for f in raw {
         let (kind, value) = if f.ty == "map" {
@@ -291,8 +334,11 @@ fn lower_fields(raw: &[RawField]) -> Result<Vec<Field>, String> {
                     f.name, f.keys.len()
                 ));
             }
-            let key_types: Result<Vec<Scalar>, String> =
-                f.keys.iter().map(|k| Scalar::parse(k)).collect();
+            let key_types: Result<Vec<Scalar>, String> = f
+                .keys
+                .iter()
+                .map(|k| Scalar::parse_scoped(k, known))
+                .collect();
             let key_types = key_types?;
             for (i, k) in key_types.iter().enumerate() {
                 if matches!(k, Scalar::Vec(_)) {
@@ -312,9 +358,9 @@ fn lower_fields(raw: &[RawField]) -> Result<Vec<Field>, String> {
                 .value
                 .as_ref()
                 .ok_or_else(|| format!("field `{}`: map requires `value = \"...\"`", f.name))?;
-            (FieldKind::Map(key_types), Scalar::parse(v)?)
+            (FieldKind::Map(key_types), Scalar::parse_scoped(v, known)?)
         } else {
-            (FieldKind::Scalar, Scalar::parse(&f.ty)?)
+            (FieldKind::Scalar, Scalar::parse_scoped(&f.ty, known)?)
         };
         // Vec inner type must be fixed-width (or address/hash32) — the
         // macro emits a length-prefix + N×element_bytes wire format
@@ -379,8 +425,11 @@ pub fn declare_storage(input: TokenStream) -> TokenStream {
         Ok(m) => m,
         Err(e) => return compile_error(&format!("otigen.toml parse error: {e}")),
     };
+    // Custom-type names declared in `[types.*]` — a bare `Order` scalar
+    // resolves through this, same as the bundle's ABI builder does.
+    let known: BTreeSet<String> = manifest.types.keys().cloned().collect();
     let raw = manifest.state.map(|s| s.schema).unwrap_or_default();
-    let fields = match lower_fields(&raw) {
+    let fields = match lower_fields_scoped(&raw, &known) {
         Ok(f) => f,
         Err(e) => return compile_error(&format!("otigen.toml [state]: {e}")),
     };
@@ -1271,6 +1320,57 @@ mod tests {
         // Empty struct() rejected.
         let err = Scalar::parse("struct()").unwrap_err();
         assert!(err.contains("not a valid Rust identifier"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_scoped_resolves_bare_custom_name() {
+        // A bare `Order` is equivalent to `struct(Order)` — but only when
+        // `Order` is declared in `[types]`. Both spellings land on the
+        // same `Scalar::Custom`, so a type reads identically in a state
+        // field and in a function signature.
+        let known: BTreeSet<String> = ["Order".to_string()].into_iter().collect();
+
+        let Scalar::Custom(a) = Scalar::parse_scoped("Order", &known).unwrap() else {
+            panic!("bare name not Custom");
+        };
+        let Scalar::Custom(b) = Scalar::parse_scoped("struct(Order)", &known).unwrap() else {
+            panic!("struct() name not Custom");
+        };
+        assert_eq!(a, "Order");
+        assert_eq!(a, b);
+
+        // Bare name inside a vec resolves the same way.
+        let Scalar::Vec(inner) = Scalar::parse_scoped("vec(Order)", &known).unwrap() else {
+            panic!("vec(Order) not Vec");
+        };
+        assert!(matches!(*inner, Scalar::Custom(ref n) if n == "Order"));
+    }
+
+    #[test]
+    fn parse_scoped_rejects_undeclared_bare_name() {
+        let known: BTreeSet<String> = ["Order".to_string()].into_iter().collect();
+        // A name that isn't in `[types]` is a typo, not a type. Reject it
+        // cleanly here instead of emitting a `super::Ordr` reference that
+        // rustc later fails on with a confusing "cannot find type" error.
+        let err = Scalar::parse_scoped("Ordr", &known).unwrap_err();
+        assert!(err.contains("unknown scalar type"), "got: {err}");
+        // With no catalog in scope (`parse`), even a real-looking name is
+        // rejected — the explicit `struct(...)` form is required there.
+        let err = Scalar::parse("Order").unwrap_err();
+        assert!(err.contains("unknown scalar type"), "got: {err}");
+    }
+
+    #[test]
+    fn lower_fields_scoped_accepts_bare_custom_scalar() {
+        let known: BTreeSet<String> = ["Order".to_string()].into_iter().collect();
+        let raw = vec![RawField {
+            name: "last".into(),
+            ty: "Order".into(),
+            keys: vec![],
+            value: None,
+        }];
+        let fields = lower_fields_scoped(&raw, &known).expect("bare custom scalar accepted");
+        assert!(matches!(fields[0].value, Scalar::Custom(ref n) if n == "Order"));
     }
 
     #[test]
