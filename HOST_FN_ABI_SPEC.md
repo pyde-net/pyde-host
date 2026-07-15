@@ -364,7 +364,7 @@ Negative i32 values returned by host functions. Each function lists which codes 
 | `-13` | `ERR_INVALID_FUNCTION_NAME` | `cross_call` target function does not exist |
 | `-14` | `ERR_XCALL_RATE_LIMITED` | Parachain cross-message budget exceeded for this wave (parachain only) |
 | `-15` | `ERR_PARACHAIN_ONLY` | Function callable only from parachain context |
-| `-16` | `ERR_CIPHERTEXT_INVALID` | Threshold-decryption input malformed |
+| `-16` | `ERR_CIPHERTEXT_INVALID` | Reserved. Formerly returned by the retired §8.5 `threshold_decrypt`; no host function currently produces it. The number stays pinned under the ABI ratchet (§2). |
 | `-17` | `ERR_SIGNATURE_INVALID` | FALCON signature verification failed |
 | `-100` | `ERR_INTERNAL` | Engine-side bug or unexpected state. Should never occur in a correct implementation; surfaces as a trap in practice. Document for completeness. |
 
@@ -986,8 +986,9 @@ Gas: 50 base.
 
 Semantics: deterministic, public randomness, identical across all validators. Use as
 a chain-derived random source. Note that the beacon is *publicly predictable* within a
-wave — adversaries cannot bias it, but they *can* observe it. Use threshold encryption
-if you need adversary-private randomness.
+wave — adversaries cannot bias it, but they *can* observe it, so it must not be used as
+a hidden seed. For inputs an adversary must not be able to predict (sealed bids, hidden
+ordering), use a commit-reveal scheme at the transaction layer instead.
 ```
 
 ---
@@ -1125,50 +1126,6 @@ Rate limit: 64 outgoing messages per wave per parachain by default
 (parachain-configurable).
 ```
 
-### 8.5 Threshold cryptography
-
-These are exposed to parachains for application-level confidentiality use cases
-(blinded auctions, sealed-bid markets, MEV-protected DEX matching at parachain layer).
-
-#### `threshold_encrypt`
-
-```text
-pyde::threshold_encrypt(
-    plaintext_ptr: i32, plaintext_len: i32,
-    ciphertext_out_ptr: i32,
-    ciphertext_out_len_ptr: i32
-) -> i32
-
-Returns: 0 on success, ERR_OUTPUT_BUFFER_TOO_SMALL if buffer insufficient.
-
-Gas: 80,000 base + 100 per byte.
-
-Semantics: encrypt under the current epoch's threshold public key. Result is a
-Kyber-768 KEM envelope + ChaCha20-Poly1305 ciphertext. Decryption requires ≥85
-shares (combined by the chain at appropriate ceremony points).
-```
-
-#### `threshold_decrypt`
-
-```text
-pyde::threshold_decrypt(
-    ciphertext_ptr: i32, ciphertext_len: i32,
-    plaintext_out_ptr: i32,
-    plaintext_out_len_ptr: i32
-) -> i32
-
-Returns: 0 on success, ERR_CIPHERTEXT_INVALID if malformed,
-         ERR_FORBIDDEN if the calling parachain has not yet hit a wave where the
-         committee has combined shares for this ciphertext.
-
-Gas: 100,000 base + 50 per byte.
-
-Semantics: decrypt a ciphertext for which the committee has already executed the
-threshold-decryption ceremony. The combined plaintext is materialized into the
-output buffer. This is parachain-only because cross-parachain ceremony coordination
-requires the parachain-specific committee infrastructure.
-```
-
 ---
 
 ## 9. Forbidden imports
@@ -1282,8 +1239,6 @@ Authoritative gas costs for every host function. This table is the source of tru
 | `parachain_version` | 5 | — | Parachain only |
 | `parachain_emit_event` | 100 | + 50 / topic + 8 / data byte | Parachain only; same multi-topic surface as core emit_event |
 | `send_xparachain_message` | 10,000 | 8 / byte | Parachain only |
-| `threshold_encrypt` | 80,000 | 100 / byte | Parachain only |
-| `threshold_decrypt` | 100,000 | 50 / byte | Parachain only |
 
 Per-word = per-8-bytes, rounded up. Per-byte = per-1-byte, no rounding.
 
