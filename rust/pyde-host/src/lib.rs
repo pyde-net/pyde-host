@@ -937,7 +937,7 @@ pub mod call {
     /// Default size for the return-data buffer the wrapper
     /// allocates on the stack-equivalent (heap, technically —
     /// `Vec` allocates via `dlmalloc`). 4 KB covers every
-    /// common ERC20/721-shape return; larger payloads should
+    /// common token-shape return; larger payloads should
     /// drop to `pyde::raw::cross_call` and size their own
     /// buffer (or stage data through storage).
     pub const DEFAULT_RETURN_BUFFER_BYTES: usize = 4096;

@@ -1102,7 +1102,7 @@ mod tests {
     fn pascal_case_roundtrips() {
         assert_eq!(to_pascal_case("counter"), "Counter");
         assert_eq!(to_pascal_case("total_supply"), "TotalSupply");
-        assert_eq!(to_pascal_case("erc20_balances"), "Erc20Balances");
+        assert_eq!(to_pascal_case("token_balances"), "TokenBalances");
         assert_eq!(to_pascal_case("x"), "X");
     }
 

@@ -713,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn lower_event_erc20_transfer_shape() {
+    fn lower_event_token_transfer_shape() {
         let raw = RawEvent {
             signature: "Transfer(address,address,uint128)".into(),
             fields: vec![
