@@ -137,33 +137,37 @@ try {
   }
 
   // ── unordered-pair canonical encoding ──────────────────────────────
+  // EVERY pair vector (incl. the 0x7f/0x80 sign-boundary one, which a
+  // signed byte comparator would sort the other way).
 
-  const pair = vectors.find((v) => v.salt_source_pair_args);
-  assert.ok(pair, "salt-of-unordered-pair vector missing from golden set");
-  const [a, b] = pair.salt_source_pair_args; // recorded DELIBERATELY unsorted
+  const pairs = vectors.filter((v) => v.salt_source_pair_args);
+  assert.ok(pairs.length >= 2, "pair vectors missing from golden set");
+  for (const pair of pairs) {
+    const [a, b] = pair.salt_source_pair_args; // recorded DELIBERATELY unsorted
 
-  const sorted = unorderedPairEncoding(a, b);
-  assert.equal(sorted.length, 64 * 2, `${pair.name}: encoding not 64 bytes`);
-  assert.equal(
-    sorted,
-    pair.salt_source_borsh,
-    `${pair.name}: sorted encoding != salt_source_borsh`,
-  );
-  assert.equal(
-    unorderedPairEncoding(b, a),
-    sorted,
-    `${pair.name}: argument order leaked into the encoding`,
-  );
-  assert.notEqual(
-    a + b,
-    sorted,
-    `${pair.name}: naive unsorted concat must differ (pair_args are unsorted on purpose)`,
-  );
+    const sorted = unorderedPairEncoding(a, b);
+    assert.equal(sorted.length, 64 * 2, `${pair.name}: encoding not 64 bytes`);
+    assert.equal(
+      sorted,
+      pair.salt_source_borsh,
+      `${pair.name}: sorted encoding != salt_source_borsh`,
+    );
+    assert.equal(
+      unorderedPairEncoding(b, a),
+      sorted,
+      `${pair.name}: argument order leaked into the encoding`,
+    );
+    assert.notEqual(
+      a + b,
+      sorted,
+      `${pair.name}: naive unsorted concat must differ (pair_args are unsorted on purpose)`,
+    );
+  }
 
   console.log(
     `child.test: ${vectors.length}/${vectors.length} vectors OK ` +
       "(preimage + child_address via hash_poseidon2 oracle); " +
-      "unordered-pair sort pinned",
+      `unordered-pair sort pinned (${pairs.length} pairs incl. sign boundary)`,
   );
 } finally {
   rmSync(tmp, { recursive: true, force: true });

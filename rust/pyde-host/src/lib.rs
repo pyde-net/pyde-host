@@ -1552,6 +1552,10 @@ impl Instantiate {
     /// endowed, and constructed. See [`InstantiateError`] for the
     /// failure taxonomy (all failures are atomic: no half-born
     /// children, endowment never lost).
+    ///
+    /// The ctor's RETURN VALUE (if any) is discarded — constructors
+    /// rarely return data, and the address is the meaningful result.
+    /// The rare caller that needs it drops to [`raw::instantiate`].
     pub fn instantiate(&self) -> Result<Address, InstantiateError> {
         use alloc::vec;
 
@@ -1697,6 +1701,23 @@ mod conformance {
              hash. pair_args holds (a, b) as passed — unsorted on purpose.",
         );
         pair.pair_args = Some((pair_a, pair_b));
+        // Sign-boundary pair: the differing byte crosses 0x7f/0x80,
+        // where SIGNED and UNSIGNED byte order disagree (0x80 = -128
+        // as i8 but 128 as u8). The 0xAA/0xBB pair above can't tell a
+        // signed comparator from an unsigned one; this vector exists
+        // to catch exactly that regression in any binding.
+        let (sign_a, sign_b) = ([0x80; 32], [0x7F; 32]);
+        let mut pair_sign = identity_case(
+            "salt-of-unordered-pair-sign-boundary",
+            [0x33; 32],
+            [0x44; 32],
+            Salt::unordered_pair_encoding(&sign_a, &sign_b),
+            "of_unordered_pair(a=0x80 x 32, b=0x7f x 32): the sort is \
+             UNSIGNED bytewise, so 0x7f sorts FIRST. A signed (i8) \
+             comparator reverses these two — this vector exists to catch \
+             exactly that.",
+        );
+        pair_sign.pair_args = Some((sign_a, sign_b));
         vec![
             // Raw opaque salts — pin the preimage assembly itself.
             raw("engine-kat-anchor", [0x11; 32], [0x22; 32], [0x33; 32]),
@@ -1757,6 +1778,7 @@ mod conformance {
                  length (11) then the UTF-8 bytes",
             ),
             pair,
+            pair_sign,
             identity_case(
                 "salt-of-mixed-tuple",
                 [0x77; 32],
@@ -1991,40 +2013,59 @@ mod conformance {
         }
     }
 
-    /// Replays the unordered-pair vector FROM its unsorted args — the
-    /// path a non-Rust implementer takes — proving the ascending-
+    /// Replays EVERY unordered-pair vector FROM its unsorted args —
+    /// the path a non-Rust implementer takes — proving the ascending-
     /// bytewise sort is load-bearing (skipping it produces a different
     /// salt).
     #[test]
-    fn unordered_pair_vector_replays_from_unsorted_args() {
+    fn unordered_pair_vectors_replay_from_unsorted_args() {
         let file = render_file();
-        let v = file
+        let pairs: Vec<_> = file
             .vectors
             .iter()
-            .find(|v| v.name == "salt-of-unordered-pair")
-            .expect("pair vector present");
-        let args = v
-            .salt_source_pair_args
-            .as_ref()
-            .expect("pair args recorded");
-        let mut a = [0u8; 32];
-        let mut b = [0u8; 32];
-        a.copy_from_slice(&hex::decode(&args[0]).unwrap());
-        b.copy_from_slice(&hex::decode(&args[1]).unwrap());
-        // Correct replay: sort ascending bytewise, concatenate, hash.
-        let sorted = Salt::unordered_pair_encoding(&a, &b);
-        assert_eq!(hex::encode(&sorted), *v.salt_source_borsh.as_ref().unwrap());
-        assert_eq!(hex::encode(p2(&sorted)), v.salt);
-        // Naive replay (argument order, no sort) MUST diverge — the
-        // recorded args are unsorted precisely so this is detectable.
-        let mut naive = Vec::with_capacity(64);
-        naive.extend_from_slice(&a);
-        naive.extend_from_slice(&b);
-        assert_ne!(
-            hex::encode(p2(&naive)),
-            v.salt,
-            "vector failed to exercise the sort: args must be recorded unsorted",
+            .filter(|v| v.salt_source_pair_args.is_some())
+            .collect();
+        assert!(
+            pairs.len() >= 2,
+            "expected the plain AND sign-boundary pair vectors",
         );
+        for v in pairs {
+            let args = v.salt_source_pair_args.as_ref().unwrap();
+            let mut a = [0u8; 32];
+            let mut b = [0u8; 32];
+            a.copy_from_slice(&hex::decode(&args[0]).unwrap());
+            b.copy_from_slice(&hex::decode(&args[1]).unwrap());
+            // Correct replay: sort ascending bytewise, concatenate, hash.
+            let sorted = Salt::unordered_pair_encoding(&a, &b);
+            assert_eq!(
+                hex::encode(&sorted),
+                *v.salt_source_borsh.as_ref().unwrap(),
+                "vector `{}`",
+                v.name,
+            );
+            assert_eq!(hex::encode(p2(&sorted)), v.salt, "vector `{}`", v.name);
+            // Naive replay (argument order, no sort) MUST diverge — the
+            // recorded args are unsorted precisely so this is detectable.
+            let mut naive = Vec::with_capacity(64);
+            naive.extend_from_slice(&a);
+            naive.extend_from_slice(&b);
+            assert_ne!(
+                hex::encode(p2(&naive)),
+                v.salt,
+                "vector `{}` failed to exercise the sort: args must be unsorted",
+                v.name,
+            );
+        }
+    }
+
+    /// The sort is UNSIGNED bytewise: 0x7f sorts before 0x80. A
+    /// signed (i8) comparator reverses them — the exact regression
+    /// the sign-boundary golden vector guards across all bindings.
+    #[test]
+    fn unordered_pair_sort_is_unsigned_at_the_sign_boundary() {
+        let enc = Salt::unordered_pair_encoding(&[0x80; 32], &[0x7F; 32]);
+        assert_eq!(&enc[..32], &[0x7F; 32], "0x7f first: unsigned order");
+        assert_eq!(&enc[32..], &[0x80; 32]);
     }
 
     /// Dev tool, not a test: rewrites the golden-vector file from the

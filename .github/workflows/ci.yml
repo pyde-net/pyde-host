@@ -54,6 +54,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Pin the host Go toolchain explicitly (the conformance step
+      # below needs `go test`; don't depend on the runner image).
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
       - uses: acifani/setup-tinygo@v2
         with:
           tinygo-version: 'latest'
