@@ -1020,7 +1020,8 @@ pyde::instantiate(
     gas_limit: i64,                    — ctor fuel budget; NEGATIVE = forward all remaining
     child_addr_out_ptr: i32,           — 32-byte out; written immediately after derivation,
                                          so it is populated on 0, -40, -43, -44, -45, -46
-                                         (every path past the early cap/bounds checks)
+                                         AND -3 (every path past the early cap/bounds
+                                         checks; NOT populated on -48)
     return_data_out_ptr: i32,
     return_data_out_len_ptr: i32       — u32 LE: capacity in / actual out
 ) -> i32
@@ -1092,13 +1093,35 @@ PREIMAGE = 107 bytes, fixed-width, NO length prefixes, NO separators:
 - **Namespacing**: `parent` comes from the executing frame, so a contract can only
   mint into its OWN namespace — cross-namespace minting is cryptographically
   impossible. Under `delegate_call`, the frame address is the DELEGATOR.
+- **Poseidon2 binding**: the digest is `pyde-crypto`'s Poseidon2 (PaddingFreeSponge
+  over Goldilocks, WIDTH=8 / RATE=4 / OUT=4, the HL round-constant set). Variable-
+  length input packs as **7-byte little-endian chunks** — one field element each,
+  zero-padded — **plus a trailing input-length field element** (load-bearing for
+  injectivity); the empty input is the single exception: one zero element, NO length
+  element. Output = 4 canonical u64, little-endian, 32 bytes. **Do NOT hand-roll the
+  permutation** — bind `pyde-crypto` (Rust / engine) or `pyde-crypto-wasm` (TS / AS);
+  a third-party Poseidon2 that disagrees forks every address. Implementations
+  without a Poseidon2 binding (Go, C) conformance-test their PREIMAGE assembly —
+  every vector carries the `preimage` field for exactly this — and inherit digest
+  correctness from the bound library's own KATs plus the live-network parity tests.
 - **Salt** is exactly 32 opaque bytes; the engine never interprets it. Deriving it
   is the caller's job: identity salts (`Poseidon2(borsh(identity))` — deterministic,
   counterfactual) or a factory-owned storage counter. There is **no nonce anywhere**.
+  - **Identity encoding**: borsh of the typed identity value, encoded ONCE as a
+    single value (tuples are frameless field concatenation, matching the calldata
+    convention).
+  - **Unordered pairs** (one child per pair of addresses — the UniswapV2 case):
+    sort the two 32-byte values **ascending BYTEWISE** (lexicographic on bytes),
+    concatenate (raw 64 bytes, no framing), hash. `(a, b)` and `(b, a)` MUST yield
+    the same salt; skipping the sort silently forks the "same" pair into two
+    different children.
 - **Conformance vectors are the drift guard**: `vectors/child_address.json` (repo
   root) is the golden set every implementation replays — engine KAT, all four
-  language bindings, both off-chain SDKs, the CLI. Anchor vector (pinned from the
-  engine KAT):
+  language bindings, both off-chain SDKs, the CLI. Identity-salt vectors carry
+  `salt_source_typed` (the normative description of the typed value) +
+  `salt_source_borsh`; the unordered-pair vector additionally records its two
+  arguments UNSORTED (`salt_source_pair_args`), so replaying from the args
+  requires implementing the sort. Anchor vector (pinned from the engine KAT):
 
 ```text
 parent   = 0x11 × 32

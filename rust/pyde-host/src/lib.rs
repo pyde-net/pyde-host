@@ -1273,9 +1273,9 @@ pub fn child_preimage(
 /// - `salt` — opaque 32 bytes, caller-derived; see [`Salt`].
 ///
 /// Same inputs → same address, forever. Hashes via the
-/// `hash_poseidon2` host fn (~100 gas + 30/word ≈ 520 gas for the
-/// 107-byte preimage), which is the same Poseidon2 the engine's
-/// authoritative derivation uses — the two cannot disagree.
+/// `hash_poseidon2` host fn (cheap — see the spec's gas catalog),
+/// which is the same Poseidon2 the engine's authoritative derivation
+/// uses — the two cannot disagree.
 #[inline]
 #[must_use]
 pub fn child_address(parent: &Address, template: &Address, salt: &[u8; 32]) -> Address {
@@ -1390,6 +1390,15 @@ mod conformance {
         /// `Some(borsh bytes)` for identity salts (`salt = Poseidon2(bytes)`);
         /// `None` for raw opaque salts.
         salt_source_borsh: Option<Vec<u8>>,
+        /// Normative description of the typed value behind
+        /// `salt_source_borsh` — so non-Rust implementers don't have to
+        /// guess widths/shapes from the bytes (u64-vs-two-u32s etc.).
+        source_typed: Option<&'static str>,
+        /// For the unordered-pair case only: the two arguments AS
+        /// PASSED (deliberately unsorted) — a replayer must implement
+        /// the ascending-bytewise sort to reproduce the salt from
+        /// these.
+        pair_args: Option<([u8; 32], [u8; 32])>,
         salt: [u8; 32],
     }
 
@@ -1398,6 +1407,7 @@ mod conformance {
         parent: [u8; 32],
         template: [u8; 32],
         source: Vec<u8>,
+        typed: &'static str,
     ) -> Case {
         let salt = p2(&source);
         Case {
@@ -1405,6 +1415,8 @@ mod conformance {
             parent,
             template,
             salt_source_borsh: Some(source),
+            source_typed: Some(typed),
+            pair_args: None,
             salt,
         }
     }
@@ -1412,38 +1424,39 @@ mod conformance {
     fn cases() -> Vec<Case> {
         let incrementing: [u8; 32] = core::array::from_fn(|i| i as u8);
         let decrementing: [u8; 32] = core::array::from_fn(|i| 31 - i as u8);
+        let raw = |name, parent, template, salt| Case {
+            name,
+            parent,
+            template,
+            salt_source_borsh: None,
+            source_typed: None,
+            pair_args: None,
+            salt,
+        };
+        // The unordered-pair case: arguments recorded AS PASSED
+        // (deliberately reversed) — the canonical encoding must come
+        // out sorted ascending (the sortTokens footgun pin), and a
+        // replayer must implement the sort to get from pair_args to
+        // the salt.
+        let (pair_a, pair_b) = ([0xBB; 32], [0xAA; 32]);
+        let mut pair = identity_case(
+            "salt-of-unordered-pair",
+            [0x11; 32],
+            [0x22; 32],
+            Salt::unordered_pair_encoding(&pair_a, &pair_b),
+            "of_unordered_pair(a, b): sort the two 32-byte values ascending \
+             BYTEWISE (lexicographic), concatenate (raw 64 bytes, no framing), \
+             hash. pair_args holds (a, b) as passed — unsorted on purpose.",
+        );
+        pair.pair_args = Some((pair_a, pair_b));
         vec![
             // Raw opaque salts — pin the preimage assembly itself.
-            Case {
-                name: "engine-kat-anchor",
-                parent: [0x11; 32],
-                template: [0x22; 32],
-                salt_source_borsh: None,
-                salt: [0x33; 32],
-            },
-            Case {
-                name: "all-zero",
-                parent: [0x00; 32],
-                template: [0x00; 32],
-                salt_source_borsh: None,
-                salt: [0x00; 32],
-            },
-            Case {
-                name: "all-max",
-                parent: [0xFF; 32],
-                template: [0xFF; 32],
-                salt_source_borsh: None,
-                salt: [0xFF; 32],
-            },
+            raw("engine-kat-anchor", [0x11; 32], [0x22; 32], [0x33; 32]),
+            raw("all-zero", [0x00; 32], [0x00; 32], [0x00; 32]),
+            raw("all-max", [0xFF; 32], [0xFF; 32], [0xFF; 32]),
             // Asymmetric parent/template — catches field-order swaps
             // and byte-order flips that symmetric patterns can't.
-            Case {
-                name: "field-order-guard",
-                parent: incrementing,
-                template: decrementing,
-                salt_source_borsh: None,
-                salt: [0x55; 32],
-            },
+            raw("field-order-guard", incrementing, decrementing, [0x55; 32]),
             // Identity salts — pin `Salt::of` (borsh → Poseidon2),
             // including the empty-input Poseidon2 edge case.
             identity_case(
@@ -1451,50 +1464,59 @@ mod conformance {
                 [0x11; 32],
                 [0x22; 32],
                 Salt::encoding(&()),
+                "the unit value () — borsh encodes to ZERO bytes; pins the \
+                 empty-input Poseidon2 rule (single zero field element, no \
+                 length element)",
             ),
             identity_case(
                 "salt-of-counter-0",
                 [0xA1; 32],
                 [0xB2; 32],
                 Salt::encoding(&0u64),
+                "0u64 — borsh: 8-byte little-endian (a u64 counter, NOT two \
+                 u32s)",
             ),
             identity_case(
                 "salt-of-counter-1",
                 [0xA1; 32],
                 [0xB2; 32],
                 Salt::encoding(&1u64),
+                "1u64 — borsh: 8-byte little-endian",
             ),
             identity_case(
                 "salt-of-i128-neg-one",
                 [0xC3; 32],
                 [0xD4; 32],
                 Salt::encoding(&(-1i128)),
+                "-1i128 — borsh: 16-byte little-endian two's complement (16 \
+                 x 0xff; deliberately byte-aliases u128::MAX — signedness is \
+                 a TYPE property, not a wire property)",
             ),
             identity_case(
-                "salt-of-u128-max",
+                "salt-of-i128-min",
                 [0xC3; 32],
                 [0xD4; 32],
-                Salt::encoding(&u128::MAX),
+                Salt::encoding(&i128::MIN),
+                "i128::MIN — borsh: 16-byte little-endian two's complement \
+                 (15 x 0x00 then 0x80)",
             ),
             identity_case(
                 "salt-of-string",
                 [0xE5; 32],
                 [0xF6; 32],
                 Salt::encoding(&"amm-pool-v1"),
+                "the string \"amm-pool-v1\" — borsh string: u32 LE byte \
+                 length (11) then the UTF-8 bytes",
             ),
-            // Passed REVERSED on purpose — the canonical encoding must
-            // come out sorted ascending (the sortTokens footgun pin).
-            identity_case(
-                "salt-of-unordered-pair",
-                [0x11; 32],
-                [0x22; 32],
-                Salt::unordered_pair_encoding(&[0xBB; 32], &[0xAA; 32]),
-            ),
+            pair,
             identity_case(
                 "salt-of-mixed-tuple",
                 [0x77; 32],
                 [0x88; 32],
                 Salt::encoding(&([0xCC_u8; 32], 42_u64, true)),
+                "the tuple ([0xcc; 32], 42u64, true) — borsh tuple is \
+                 FRAMELESS field concatenation: raw 32 bytes, then 8-byte LE \
+                 42, then 0x01 for true",
             ),
         ]
     }
@@ -1523,8 +1545,16 @@ mod conformance {
         name: String,
         parent: String,
         template: String,
+        /// Normative description of the typed value the borsh bytes
+        /// encode — so implementers never guess widths/shapes.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        salt_source_typed: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         salt_source_borsh: Option<String>,
+        /// Unordered-pair case only: the two args AS PASSED (unsorted);
+        /// a replayer must sort ascending bytewise to reach the salt.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        salt_source_pair_args: Option<[String; 2]>,
         salt: String,
         preimage: String,
         child_address: String,
@@ -1536,7 +1566,11 @@ mod conformance {
             name: case.name.into(),
             parent: hex::encode(case.parent),
             template: hex::encode(case.template),
+            salt_source_typed: case.source_typed.map(String::from),
             salt_source_borsh: case.salt_source_borsh.as_ref().map(hex::encode),
+            salt_source_pair_args: case
+                .pair_args
+                .map(|(a, b)| [hex::encode(a), hex::encode(b)]),
             salt: hex::encode(case.salt),
             preimage: hex::encode(preimage),
             child_address: hex::encode(p2(&preimage)),
@@ -1564,8 +1598,13 @@ mod conformance {
                     .into(),
                 salt_rule: "Vectors with salt_source_borsh are identity salts: salt = \
                             Poseidon2(salt_source_borsh), where salt_source_borsh is the \
-                            borsh encoding of the identity value (Salt::of). Vectors \
-                            without it use the raw salt bytes verbatim."
+                            borsh encoding of the typed value described in \
+                            salt_source_typed (Salt::of). Vectors without it use the raw \
+                            salt bytes verbatim. Unordered pairs: sort the two 32-byte \
+                            values ascending BYTEWISE (lexicographic), then concatenate \
+                            (raw 64 bytes, no framing) — salt_source_pair_args records \
+                            the args deliberately UNSORTED so replaying from them \
+                            requires implementing the sort."
                     .into(),
                 anchor: "engine-kat-anchor reproduces the engine's pinned KAT in \
                          pyde-net/engine crates/account/src/address.rs \
@@ -1651,8 +1690,54 @@ mod conformance {
                 "vector `{}`: field `salt_source_borsh` drifted",
                 want.name,
             );
+            assert_eq!(
+                got.salt_source_typed, want.salt_source_typed,
+                "vector `{}`: field `salt_source_typed` drifted",
+                want.name,
+            );
+            assert_eq!(
+                got.salt_source_pair_args, want.salt_source_pair_args,
+                "vector `{}`: field `salt_source_pair_args` drifted",
+                want.name,
+            );
             assert_eq!(got.name, want.name, "vector name/order drifted");
         }
+    }
+
+    /// Replays the unordered-pair vector FROM its unsorted args — the
+    /// path a non-Rust implementer takes — proving the ascending-
+    /// bytewise sort is load-bearing (skipping it produces a different
+    /// salt).
+    #[test]
+    fn unordered_pair_vector_replays_from_unsorted_args() {
+        let file = render_file();
+        let v = file
+            .vectors
+            .iter()
+            .find(|v| v.name == "salt-of-unordered-pair")
+            .expect("pair vector present");
+        let args = v
+            .salt_source_pair_args
+            .as_ref()
+            .expect("pair args recorded");
+        let mut a = [0u8; 32];
+        let mut b = [0u8; 32];
+        a.copy_from_slice(&hex::decode(&args[0]).unwrap());
+        b.copy_from_slice(&hex::decode(&args[1]).unwrap());
+        // Correct replay: sort ascending bytewise, concatenate, hash.
+        let sorted = Salt::unordered_pair_encoding(&a, &b);
+        assert_eq!(hex::encode(&sorted), *v.salt_source_borsh.as_ref().unwrap());
+        assert_eq!(hex::encode(p2(&sorted)), v.salt);
+        // Naive replay (argument order, no sort) MUST diverge — the
+        // recorded args are unsorted precisely so this is detectable.
+        let mut naive = Vec::with_capacity(64);
+        naive.extend_from_slice(&a);
+        naive.extend_from_slice(&b);
+        assert_ne!(
+            hex::encode(p2(&naive)),
+            v.salt,
+            "vector failed to exercise the sort: args must be recorded unsorted",
+        );
     }
 
     /// Dev tool, not a test: rewrites the golden-vector file from the
