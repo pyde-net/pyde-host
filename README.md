@@ -53,7 +53,7 @@ import { storage, events, log } from "@pyde-net/host";
 go get github.com/pyde-net/pyde-host/go
 ```
 
-Or vendor the file directly — `go/host.go` is a single file with no
+Or vendor the file directly — `go/host_fns.go` is a single file with no
 runtime dependencies. TinyGo picks it up transparently.
 
 ### C
@@ -75,8 +75,8 @@ publishing calendar of any one language ecosystem. That means:
 - Every published Rust, AssemblyScript, Go, and C release under the same
   tag corresponds to the same frozen spec revision.
 - Pre-mainnet, releases track the otigen release train. The current
-  version, `0.1.0-alpha.6`, matches the ABI shipped by
-  `otigen 0.1.0-alpha.6`.
+  version is `0.1.0-alpha.9` (the `pyde::instantiate` factory
+  release — 41 host functions).
 - After mainnet, the ABI is under a one-way ratchet: only additions are
   allowed, and additions bump the minor version (`v1.0` → `v1.1`). Removing
   or renaming a host fn — or changing its signature, gas cost, or error
@@ -93,13 +93,13 @@ To add a new host fn:
 1. Add it to `HOST_FN_ABI_SPEC.md` first, with a full entry: signature,
    gas cost, error codes, and any parachain-only gating.
 2. Add matching entries to all four language bindings in the same PR:
-   - `rust/pyde-host/src/host.rs`
-   - `assemblyscript/assembly/host.ts`
-   - `go/host.go`
+   - `rust/pyde-host/src/lib.rs`
+   - `assemblyscript/assembly/host_fns.ts`
+   - `go/host_fns.go`
    - `c/include/pyde/host.h`
-3. Run `scripts/parity-check.sh` locally. It parses the spec, diffs it
-   against each binding, and fails if any language is missing the new fn
-   or disagrees on its signature.
+3. Run `python3 scripts/check_parity.py` locally. It parses the four
+   bindings' import declarations and fails if any wire name is missing
+   from any language.
 
 CI runs the parity check on every push. A PR that touches the spec
 without also touching the four bindings — or vice versa — will not merge.

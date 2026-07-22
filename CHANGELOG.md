@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project's versioning tracks the `HOST_FN_ABI_SPEC` version — see
 [`README.md`](./README.md#versioning) for the exact policy.
 
-## [Unreleased]
+## [0.1.0-alpha.9] — 2026-07-22
+
+The factory release: `pyde::instantiate` (PIP-0006) across the whole
+toolchain surface — 41 host functions.
 
 ### Added
 - **Factory pattern (PIP-0006) groundwork — canonical child-address
@@ -35,9 +38,31 @@ and this project's versioning tracks the `HOST_FN_ABI_SPEC` version — see
     gas), the child-address derivation + anchor vector, the pinned
     `Instantiated` event layout, §4 error codes `-40..-48` (with
     `-41/-42/-47` reserved-dead), and the §10 gas-table row.
-  The `instantiate` extern itself lands in all four language bindings
-  together in the next release (the wire-name parity gate moves 40 → 41
-  atomically).
+- **The `pyde::instantiate` wire import, in all four language bindings
+  at once** — the parity surface moves 40 → 41 atomically. Rust
+  (`raw::instantiate`), Go (`Instantiate`), AssemblyScript
+  (`instantiate`), C (`instantiate`), all on the frozen 9-param
+  signature with the full error/out-param contract documented in the
+  declaration comments.
+- **Rust `prepare()` builder** — the ratified factory grammar:
+  `pyde::prepare(&template, &salt).args(&(a, b)).value(v).gas(g)
+  .instantiate()? -> Address`. `prepare` is pure (an unfired builder
+  is free); `.args` eagerly borsh-encodes raw typed values into ONE
+  owned tuple (never pass pre-encoded blobs — `.raw_args` is the
+  explicit escape hatch); setters mutate in place so conditional
+  configuration reads naturally; `instantiate()` is the only method
+  that touches the chain. Typed failures via `#[non_exhaustive]
+  InstantiateError` incl. `Exists { addr }` (the idempotent-factory
+  idiom in one match arm) and `CtorReverted { payload }` with
+  `revert_message()`.
+- **Per-language child-address conformance surfaces**: Go
+  `child` subpackage (pure — host-`go test`-able), AssemblyScript
+  `assembly/child.ts` (`childPreimage` / `unorderedPairEncoding` /
+  on-chain `childAddress`), C `<pyde/child.h>` (header-only
+  `pyde_child_preimage` / `pyde_unordered_pair_encoding` + wasm-only
+  `pyde_child_address`) — each replaying the shared golden vectors
+  (preimage assembly + the ascending-bytewise pair sort) in its own
+  CI job.
 
 ## [0.1.0-alpha.7] — 2026-07-03
 

@@ -258,3 +258,38 @@ export declare function consume_gas(amount: i64): i32;
 
 @external("pyde", "beacon_get")
 export declare function beacon_get(out_ptr: usize): i32;
+
+// ─────────────────────────────────────────────────────────────────────
+// §7.12 Factory instantiation (PIP-0006)
+// ─────────────────────────────────────────────────────────────────────
+//
+// Create a child instance of the DEPLOYED template contract at
+// template_addr_ptr (32 bytes), addressed by
+// child_address(self, template, salt) — by reference: the child
+// shares the template's cached code. salt_ptr → 32 opaque
+// caller-derived bytes; init_* → borsh ctor args (≤ 16384 bytes;
+// zero for ctor-less templates); value_ptr → 16-byte LE u128
+// endowment; gas_limit < 0 = forward all remaining.
+//
+// child_addr_out_ptr (32 bytes) is written on every path past the
+// early cap/bounds checks (0, -40, -43, -44, -45, -46, -3 — NOT
+// -48). Return data carries the ctor's return value on 0 and its
+// revert payload VERBATIM on -40. Codes: -40 ctor reverted (ATOMIC
+// refund); -43 template not a contract; -44 occupied by a
+// NON-mergeable account; -45 nonempty init on a ctor-less template;
+// -46 PIP-2 prefix collision; -48 per-tx cap (64); -3 balance <
+// endowment. Traps from view/static frames and at depth >= 1024.
+//
+// gas: 20000 base + 8 per init byte + the ctor's own gas.
+
+@external("pyde", "instantiate")
+export declare function instantiate(
+  template_addr_ptr: usize,
+  salt_ptr: usize,
+  init_calldata_ptr: usize, init_calldata_len: i32,
+  value_ptr: usize,
+  gas_limit: i64,
+  child_addr_out_ptr: usize,
+  return_data_out_ptr: usize,
+  return_data_out_len_ptr: usize,
+): i32;

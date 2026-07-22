@@ -22,9 +22,9 @@ alloc = ["dep:dlmalloc"]
 
 [dependencies]
 dlmalloc = { version = "0.2", features = ["global"], optional = true }
-pyde-entry-macros = { path = "../pyde-entry-macros", version = "0.1.0-alpha.8" }
-pyde-storage-macros = { path = "../pyde-storage-macros", version = "0.1.0-alpha.8" }
-pyde-events-macros = { path = "../pyde-events-macros", version = "0.1.0-alpha.8" }
+pyde-entry-macros = { path = "../pyde-entry-macros", version = "0.1.0-alpha.9" }
+pyde-storage-macros = { path = "../pyde-storage-macros", version = "0.1.0-alpha.9" }
+pyde-events-macros = { path = "../pyde-events-macros", version = "0.1.0-alpha.9" }
 # `default-features = false` keeps it no_std-friendly inside the
 # contract; `derive` is host-side only and pulls in no wasm code.
 borsh = { version = "1.5", default-features = false }
