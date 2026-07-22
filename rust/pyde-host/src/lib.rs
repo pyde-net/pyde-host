@@ -29,6 +29,12 @@
 
 #![no_std]
 
+// The conformance tests mirror the on-chain derivations against the
+// reference `pyde-crypto` implementation (dev-dependency) and read the
+// shared golden-vector file — both need std, test-only.
+#[cfg(test)]
+extern crate std;
+
 /// `dlmalloc` as the contract's global allocator. The `#[pyde::entry]`
 /// macro emits `Vec`-using code, so contracts that opt into it need
 /// a heap. Opt out with `pyde-host = { features = [] }` and provide
@@ -1200,5 +1206,555 @@ pub mod call {
         }
         buf.truncate(actual);
         Ok(buf)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Factory pattern (PIP-0006) — child-address derivation + salt helpers
+// ─────────────────────────────────────────────────────────────────────
+//
+// A factory contract creates child instances of a deployed TEMPLATE
+// contract via `pyde::instantiate` (by reference — the template's code
+// is shared, never copied). The child's address is a pure function of
+// `(parent, template, salt)`, so anyone — the factory on-chain, a
+// wallet off-chain, an indexer — can compute where a child lives
+// BEFORE it exists (counterfactual addressing, CREATE2-style but
+// salt-only: Pyde has no creation nonce anywhere).
+//
+// This block is the Rust half of the ONE canonical derivation that the
+// engine (`pyde_engine_account::child_address`), all four language
+// bindings, both off-chain SDKs, and the CLI must reproduce
+// byte-identically. The shared drift guard is `vectors/
+// child_address.json` at the repo root — every implementation's CI
+// replays the same golden set, anchored on the engine's pinned KAT.
+
+/// Domain-separator prefix for child (factory-instantiated) addresses.
+/// Exactly 11 bytes — keeps child addresses structurally disjoint from
+/// every other address family (EOA, contract-name, system).
+pub const CHILD_ADDRESS_PREFIX: &[u8; 11] = b"pyde-child:";
+
+/// Byte length of the child-address preimage: `11 + 32 + 32 + 32`.
+/// Fixed-width with no length prefixes or separators — required for
+/// hash injectivity.
+pub const CHILD_PREIMAGE_LEN: usize = 107;
+
+/// Assemble the canonical 107-byte child-address preimage:
+///
+/// ```text
+/// "pyde-child:" ‖ parent (32 B) ‖ template (32 B) ‖ salt (32 B)
+/// ```
+///
+/// Pure byte assembly — no hashing, no host calls — so conformance
+/// tests can pin the layout without a chain. Contracts normally want
+/// [`child_address`] instead.
+#[inline]
+#[must_use]
+pub fn child_preimage(
+    parent: &Address,
+    template: &Address,
+    salt: &[u8; 32],
+) -> [u8; CHILD_PREIMAGE_LEN] {
+    let mut p = [0u8; CHILD_PREIMAGE_LEN];
+    p[..11].copy_from_slice(CHILD_ADDRESS_PREFIX);
+    p[11..43].copy_from_slice(parent);
+    p[43..75].copy_from_slice(template);
+    p[75..107].copy_from_slice(salt);
+    p
+}
+
+/// Address of the child a factory would (or did) create for
+/// `(template, salt)` — `Poseidon2` of [`child_preimage`].
+///
+/// - `parent` — the FACTORY's own address. On-chain, pass
+///   [`ctx::self_address()`]; the engine derives from the executing
+///   frame, so a contract can only ever mint into its OWN namespace.
+/// - `template` — the deployed template contract's address (an
+///   address, NOT a code hash).
+/// - `salt` — opaque 32 bytes, caller-derived; see [`Salt`].
+///
+/// Same inputs → same address, forever. Hashes via the
+/// `hash_poseidon2` host fn (cheap — see the spec's gas catalog),
+/// which is the same Poseidon2 the engine's authoritative derivation
+/// uses — the two cannot disagree.
+#[inline]
+#[must_use]
+pub fn child_address(parent: &Address, template: &Address, salt: &[u8; 32]) -> Address {
+    hash::poseidon2(&child_preimage(parent, template, salt))
+}
+
+/// Salt constructors for [`child_address`] / `pyde::instantiate`.
+///
+/// A salt is exactly 32 opaque bytes at the wire; deriving those bytes
+/// is entirely the caller's job (the engine never interprets them).
+/// Two disciplined patterns cover practically every factory:
+///
+/// - **Identity salt** — hash the child's identity so the address is
+///   deterministic + counterfactual: [`Salt::of`] /
+///   [`Salt::of_unordered_pair`]. One pool per token pair, one escrow
+///   per (buyer, seller, id), ...
+/// - **Sequential salt** — the factory keeps its own `u64` counter in
+///   its own storage and hashes it: `Salt::of(&counter)`, increment
+///   after. (NOT an engine nonce — Pyde has none.)
+///
+/// "Random" salts are an anti-pattern: deterministically-unique only,
+/// or you lose counterfactual addressing and idempotent re-creation.
+pub struct Salt;
+
+impl Salt {
+    /// Identity salt: `Poseidon2(borsh(value))`.
+    ///
+    /// `value` is any borsh-serializable identity — a tuple of ctor
+    /// params, a counter, a string tag. Encodes ONCE as a single
+    /// borsh value (for tuples: the frameless concatenation of the
+    /// fields, exactly matching `#[pyde::entry]`'s calldata
+    /// convention), then hashes via the `hash_poseidon2` host fn.
+    #[inline]
+    #[must_use]
+    pub fn of<T: borsh::BorshSerialize>(value: &T) -> [u8; 32] {
+        hash::poseidon2(&Self::encoding(value))
+    }
+
+    /// Identity salt for an UNORDERED address pair — the two
+    /// addresses are sorted before encoding, so `(a, b)` and
+    /// `(b, a)` yield the same salt (and therefore the same child).
+    ///
+    /// This is the UniswapV2 `sortTokens` footgun handled once, here:
+    /// without sorting, the "same" pair passed in different orders
+    /// silently forks into two different children.
+    #[inline]
+    #[must_use]
+    pub fn of_unordered_pair(a: &Address, b: &Address) -> [u8; 32] {
+        hash::poseidon2(&Self::unordered_pair_encoding(a, b))
+    }
+
+    /// The exact borsh bytes [`Salt::of`] hashes — exposed so
+    /// off-chain implementations and the conformance vectors can
+    /// reproduce salts byte-identically without a chain.
+    #[inline]
+    #[must_use]
+    pub fn encoding<T: borsh::BorshSerialize>(value: &T) -> alloc::vec::Vec<u8> {
+        borsh::to_vec(value).expect("salt: borsh encoding failed")
+    }
+
+    /// The exact bytes [`Salt::of_unordered_pair`] hashes: the two
+    /// addresses in ascending byte order, concatenated (borsh of a
+    /// fixed-size array pair = the raw 64 bytes, no framing).
+    #[inline]
+    #[must_use]
+    pub fn unordered_pair_encoding(a: &Address, b: &Address) -> alloc::vec::Vec<u8> {
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        Self::encoding(&(lo, hi))
+    }
+}
+
+/// Conformance suite for the child-address derivation + salt helpers.
+///
+/// Everything here runs HOST-SIDE (no chain): the preimage assembly
+/// and salt encodings are pure functions of this crate; the Poseidon2
+/// step is mirrored via the reference `pyde-crypto` crate — the exact
+/// implementation the engine's `hash_poseidon2` host fn binds, so a
+/// pass here means the on-chain composition computes the same bytes.
+///
+/// The golden vectors live at `vectors/child_address.json` (repo
+/// root) and are the SHARED artifact every language binding + SDK CI
+/// replays. Regenerate with:
+///
+/// ```text
+/// cargo test -p pyde-host regenerate_golden_vectors -- --ignored
+/// ```
+#[cfg(test)]
+mod conformance {
+    use std::string::String;
+    use std::vec::Vec;
+    use std::{format, vec};
+
+    use super::{child_preimage, Salt, CHILD_ADDRESS_PREFIX, CHILD_PREIMAGE_LEN};
+
+    /// Host-side mirror of the `hash_poseidon2` host fn — same crate,
+    /// same version (`=`-pinned) the engine links.
+    fn p2(data: &[u8]) -> [u8; 32] {
+        pyde_crypto::poseidon2::poseidon2_hash(data).into()
+    }
+
+    /// Where the shared golden vectors live: `<repo>/vectors/`.
+    fn vectors_path() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/child_address.json")
+    }
+
+    // ── the typed truth the vectors are generated from ──────────────
+
+    struct Case {
+        name: &'static str,
+        parent: [u8; 32],
+        template: [u8; 32],
+        /// `Some(borsh bytes)` for identity salts (`salt = Poseidon2(bytes)`);
+        /// `None` for raw opaque salts.
+        salt_source_borsh: Option<Vec<u8>>,
+        /// Normative description of the typed value behind
+        /// `salt_source_borsh` — so non-Rust implementers don't have to
+        /// guess widths/shapes from the bytes (u64-vs-two-u32s etc.).
+        source_typed: Option<&'static str>,
+        /// For the unordered-pair case only: the two arguments AS
+        /// PASSED (deliberately unsorted) — a replayer must implement
+        /// the ascending-bytewise sort to reproduce the salt from
+        /// these.
+        pair_args: Option<([u8; 32], [u8; 32])>,
+        salt: [u8; 32],
+    }
+
+    fn identity_case(
+        name: &'static str,
+        parent: [u8; 32],
+        template: [u8; 32],
+        source: Vec<u8>,
+        typed: &'static str,
+    ) -> Case {
+        let salt = p2(&source);
+        Case {
+            name,
+            parent,
+            template,
+            salt_source_borsh: Some(source),
+            source_typed: Some(typed),
+            pair_args: None,
+            salt,
+        }
+    }
+
+    fn cases() -> Vec<Case> {
+        let incrementing: [u8; 32] = core::array::from_fn(|i| i as u8);
+        let decrementing: [u8; 32] = core::array::from_fn(|i| 31 - i as u8);
+        let raw = |name, parent, template, salt| Case {
+            name,
+            parent,
+            template,
+            salt_source_borsh: None,
+            source_typed: None,
+            pair_args: None,
+            salt,
+        };
+        // The unordered-pair case: arguments recorded AS PASSED
+        // (deliberately reversed) — the canonical encoding must come
+        // out sorted ascending (the sortTokens footgun pin), and a
+        // replayer must implement the sort to get from pair_args to
+        // the salt.
+        let (pair_a, pair_b) = ([0xBB; 32], [0xAA; 32]);
+        let mut pair = identity_case(
+            "salt-of-unordered-pair",
+            [0x11; 32],
+            [0x22; 32],
+            Salt::unordered_pair_encoding(&pair_a, &pair_b),
+            "of_unordered_pair(a, b): sort the two 32-byte values ascending \
+             BYTEWISE (lexicographic), concatenate (raw 64 bytes, no framing), \
+             hash. pair_args holds (a, b) as passed — unsorted on purpose.",
+        );
+        pair.pair_args = Some((pair_a, pair_b));
+        vec![
+            // Raw opaque salts — pin the preimage assembly itself.
+            raw("engine-kat-anchor", [0x11; 32], [0x22; 32], [0x33; 32]),
+            raw("all-zero", [0x00; 32], [0x00; 32], [0x00; 32]),
+            raw("all-max", [0xFF; 32], [0xFF; 32], [0xFF; 32]),
+            // Asymmetric parent/template — catches field-order swaps
+            // and byte-order flips that symmetric patterns can't.
+            raw("field-order-guard", incrementing, decrementing, [0x55; 32]),
+            // Identity salts — pin `Salt::of` (borsh → Poseidon2),
+            // including the empty-input Poseidon2 edge case.
+            identity_case(
+                "salt-of-unit-empty-borsh",
+                [0x11; 32],
+                [0x22; 32],
+                Salt::encoding(&()),
+                "the unit value () — borsh encodes to ZERO bytes; pins the \
+                 empty-input Poseidon2 rule (single zero field element, no \
+                 length element)",
+            ),
+            identity_case(
+                "salt-of-counter-0",
+                [0xA1; 32],
+                [0xB2; 32],
+                Salt::encoding(&0u64),
+                "0u64 — borsh: 8-byte little-endian (a u64 counter, NOT two \
+                 u32s)",
+            ),
+            identity_case(
+                "salt-of-counter-1",
+                [0xA1; 32],
+                [0xB2; 32],
+                Salt::encoding(&1u64),
+                "1u64 — borsh: 8-byte little-endian",
+            ),
+            identity_case(
+                "salt-of-i128-neg-one",
+                [0xC3; 32],
+                [0xD4; 32],
+                Salt::encoding(&(-1i128)),
+                "-1i128 — borsh: 16-byte little-endian two's complement (16 \
+                 x 0xff; deliberately byte-aliases u128::MAX — signedness is \
+                 a TYPE property, not a wire property)",
+            ),
+            identity_case(
+                "salt-of-i128-min",
+                [0xC3; 32],
+                [0xD4; 32],
+                Salt::encoding(&i128::MIN),
+                "i128::MIN — borsh: 16-byte little-endian two's complement \
+                 (15 x 0x00 then 0x80)",
+            ),
+            identity_case(
+                "salt-of-string",
+                [0xE5; 32],
+                [0xF6; 32],
+                Salt::encoding(&"amm-pool-v1"),
+                "the string \"amm-pool-v1\" — borsh string: u32 LE byte \
+                 length (11) then the UTF-8 bytes",
+            ),
+            pair,
+            identity_case(
+                "salt-of-mixed-tuple",
+                [0x77; 32],
+                [0x88; 32],
+                Salt::encoding(&([0xCC_u8; 32], 42_u64, true)),
+                "the tuple ([0xcc; 32], 42u64, true) — borsh tuple is \
+                 FRAMELESS field concatenation: raw 32 bytes, then 8-byte LE \
+                 42, then 0x01 for true",
+            ),
+        ]
+    }
+
+    // ── JSON shape of the shared vector file ────────────────────────
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct VectorFile {
+        #[serde(rename = "_meta")]
+        meta: Meta,
+        vectors: Vec<VectorEntry>,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Meta {
+        description: String,
+        derivation: String,
+        poseidon2: String,
+        salt_rule: String,
+        anchor: String,
+        regenerate: String,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct VectorEntry {
+        name: String,
+        parent: String,
+        template: String,
+        /// Normative description of the typed value the borsh bytes
+        /// encode — so implementers never guess widths/shapes.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        salt_source_typed: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        salt_source_borsh: Option<String>,
+        /// Unordered-pair case only: the two args AS PASSED (unsorted);
+        /// a replayer must sort ascending bytewise to reach the salt.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        salt_source_pair_args: Option<[String; 2]>,
+        salt: String,
+        preimage: String,
+        child_address: String,
+    }
+
+    fn render(case: &Case) -> VectorEntry {
+        let preimage = child_preimage(&case.parent, &case.template, &case.salt);
+        VectorEntry {
+            name: case.name.into(),
+            parent: hex::encode(case.parent),
+            template: hex::encode(case.template),
+            salt_source_typed: case.source_typed.map(String::from),
+            salt_source_borsh: case.salt_source_borsh.as_ref().map(hex::encode),
+            salt_source_pair_args: case
+                .pair_args
+                .map(|(a, b)| [hex::encode(a), hex::encode(b)]),
+            salt: hex::encode(case.salt),
+            preimage: hex::encode(preimage),
+            child_address: hex::encode(p2(&preimage)),
+        }
+    }
+
+    fn render_file() -> VectorFile {
+        VectorFile {
+            meta: Meta {
+                description: "Golden conformance vectors for the Pyde factory (PIP-0006) \
+                              child-address derivation. Every implementation (engine, 4 \
+                              language bindings, rust/ts SDKs, CLI) must reproduce every \
+                              vector byte-for-byte."
+                    .into(),
+                derivation: "child_address = Poseidon2(\"pyde-child:\" || parent[32] || \
+                             template[32] || salt[32]); preimage is 107 bytes fixed-width, \
+                             no length prefixes, no separators."
+                    .into(),
+                poseidon2: "pyde-crypto Poseidon2: PaddingFreeSponge over Goldilocks, \
+                            WIDTH=8 RATE=4 OUT=4, HL round constants; input packed as \
+                            7-byte LE chunks (one field element each) plus a trailing \
+                            input-length element (empty input = single zero element, no \
+                            length element); output = 4 canonical u64, little-endian, \
+                            32 bytes."
+                    .into(),
+                salt_rule: "Vectors with salt_source_borsh are identity salts: salt = \
+                            Poseidon2(salt_source_borsh), where salt_source_borsh is the \
+                            borsh encoding of the typed value described in \
+                            salt_source_typed (Salt::of). Vectors without it use the raw \
+                            salt bytes verbatim. Unordered pairs: sort the two 32-byte \
+                            values ascending BYTEWISE (lexicographic), then concatenate \
+                            (raw 64 bytes, no framing) — salt_source_pair_args records \
+                            the args deliberately UNSORTED so replaying from them \
+                            requires implementing the sort."
+                    .into(),
+                anchor: "engine-kat-anchor reproduces the engine's pinned KAT in \
+                         pyde-net/engine crates/account/src/address.rs \
+                         (child_address_kat_pins_derivation)."
+                    .into(),
+                regenerate: "cargo test -p pyde-host regenerate_golden_vectors -- --ignored".into(),
+            },
+            vectors: cases().iter().map(render).collect(),
+        }
+    }
+
+    // ── the tests ───────────────────────────────────────────────────
+
+    /// The engine's pinned KAT, reproduced independently. If this
+    /// trips, the preimage layout or Poseidon2 binding drifted — fix
+    /// THAT; never re-pin.
+    #[test]
+    fn engine_kat_anchor_pins_derivation() {
+        const EXPECTED: [u8; 32] = [
+            0x35, 0x4a, 0xb9, 0xa5, 0x8e, 0x3f, 0xb7, 0x6b, 0x48, 0x43, 0x90, 0xa2, 0xef, 0x27,
+            0x75, 0x94, 0x04, 0x2e, 0x12, 0xfd, 0x0b, 0x74, 0x34, 0x3e, 0x5b, 0xf3, 0x4d, 0xba,
+            0x49, 0x2f, 0x3d, 0xfe,
+        ];
+        let got = p2(&child_preimage(&[0x11; 32], &[0x22; 32], &[0x33; 32]));
+        assert_eq!(
+            got,
+            EXPECTED,
+            "child_address drifted from the engine KAT; got {}",
+            hex::encode(got),
+        );
+    }
+
+    #[test]
+    fn preimage_layout_is_fixed_width() {
+        let (p, t, s) = ([0xAB; 32], [0xCD; 32], [0xEF; 32]);
+        let pre = child_preimage(&p, &t, &s);
+        assert_eq!(pre.len(), CHILD_PREIMAGE_LEN);
+        assert_eq!(&pre[..11], CHILD_ADDRESS_PREFIX);
+        assert_eq!(&pre[11..43], &p);
+        assert_eq!(&pre[43..75], &t);
+        assert_eq!(&pre[75..107], &s);
+    }
+
+    #[test]
+    fn unordered_pair_encoding_sorts() {
+        let (a, b) = ([0xAA_u8; 32], [0xBB_u8; 32]);
+        let forward = Salt::unordered_pair_encoding(&a, &b);
+        let reversed = Salt::unordered_pair_encoding(&b, &a);
+        assert_eq!(forward, reversed, "pair order must not matter");
+        assert_eq!(forward.len(), 64, "two raw 32-byte arrays, no framing");
+        assert_eq!(&forward[..32], &a, "ascending order: lower address first");
+        assert_eq!(&forward[32..], &b);
+    }
+
+    /// The committed vector file must equal what the typed cases
+    /// produce — guards the file against manual edits AND the code
+    /// against drift, in one assertion.
+    #[test]
+    fn golden_vectors_hold() {
+        let raw = std::fs::read_to_string(vectors_path()).expect(
+            "vectors/child_address.json missing — run \
+             `cargo test -p pyde-host regenerate_golden_vectors -- --ignored`",
+        );
+        let on_disk: VectorFile = serde_json::from_str(&raw).expect("vector file parses");
+        let expected = render_file();
+        assert_eq!(
+            on_disk.vectors.len(),
+            expected.vectors.len(),
+            "vector count mismatch",
+        );
+        for (got, want) in on_disk.vectors.iter().zip(expected.vectors.iter()) {
+            for (field, g, w) in [
+                ("parent", &got.parent, &want.parent),
+                ("template", &got.template, &want.template),
+                ("salt", &got.salt, &want.salt),
+                ("preimage", &got.preimage, &want.preimage),
+                ("child_address", &got.child_address, &want.child_address),
+            ] {
+                assert_eq!(g, w, "vector `{}`: field `{field}` drifted", want.name);
+            }
+            assert_eq!(
+                got.salt_source_borsh, want.salt_source_borsh,
+                "vector `{}`: field `salt_source_borsh` drifted",
+                want.name,
+            );
+            assert_eq!(
+                got.salt_source_typed, want.salt_source_typed,
+                "vector `{}`: field `salt_source_typed` drifted",
+                want.name,
+            );
+            assert_eq!(
+                got.salt_source_pair_args, want.salt_source_pair_args,
+                "vector `{}`: field `salt_source_pair_args` drifted",
+                want.name,
+            );
+            assert_eq!(got.name, want.name, "vector name/order drifted");
+        }
+    }
+
+    /// Replays the unordered-pair vector FROM its unsorted args — the
+    /// path a non-Rust implementer takes — proving the ascending-
+    /// bytewise sort is load-bearing (skipping it produces a different
+    /// salt).
+    #[test]
+    fn unordered_pair_vector_replays_from_unsorted_args() {
+        let file = render_file();
+        let v = file
+            .vectors
+            .iter()
+            .find(|v| v.name == "salt-of-unordered-pair")
+            .expect("pair vector present");
+        let args = v
+            .salt_source_pair_args
+            .as_ref()
+            .expect("pair args recorded");
+        let mut a = [0u8; 32];
+        let mut b = [0u8; 32];
+        a.copy_from_slice(&hex::decode(&args[0]).unwrap());
+        b.copy_from_slice(&hex::decode(&args[1]).unwrap());
+        // Correct replay: sort ascending bytewise, concatenate, hash.
+        let sorted = Salt::unordered_pair_encoding(&a, &b);
+        assert_eq!(hex::encode(&sorted), *v.salt_source_borsh.as_ref().unwrap());
+        assert_eq!(hex::encode(p2(&sorted)), v.salt);
+        // Naive replay (argument order, no sort) MUST diverge — the
+        // recorded args are unsorted precisely so this is detectable.
+        let mut naive = Vec::with_capacity(64);
+        naive.extend_from_slice(&a);
+        naive.extend_from_slice(&b);
+        assert_ne!(
+            hex::encode(p2(&naive)),
+            v.salt,
+            "vector failed to exercise the sort: args must be recorded unsorted",
+        );
+    }
+
+    /// Dev tool, not a test: rewrites the golden-vector file from the
+    /// typed cases. Run explicitly after an INTENTIONAL derivation
+    /// change (which must also update the engine KAT + this module's
+    /// anchor test + every language binding).
+    #[test]
+    #[ignore]
+    fn regenerate_golden_vectors() {
+        let file = render_file();
+        let json = format!(
+            "{}\n",
+            serde_json::to_string_pretty(&file).expect("serialize vectors"),
+        );
+        let path = vectors_path();
+        std::fs::create_dir_all(path.parent().expect("vectors dir")).expect("mkdir vectors");
+        std::fs::write(&path, json).expect("write vectors");
+        std::println!("wrote {}", path.display());
     }
 }

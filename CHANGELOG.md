@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project's versioning tracks the `HOST_FN_ABI_SPEC` version — see
 [`README.md`](./README.md#versioning) for the exact policy.
 
+## [Unreleased]
+
+### Added
+- **Factory pattern (PIP-0006) groundwork — canonical child-address
+  derivation + golden conformance vectors.** The engine's
+  `pyde::instantiate` host fn (the 41st, shipped engine-side) addresses
+  children by `Poseidon2("pyde-child:" ‖ parent ‖ template ‖ salt)`
+  (107-byte fixed-width preimage). This release ships the toolchain
+  half of that contract:
+  - Rust binding: pure `child_preimage` / `child_address` (hashes via
+    the `hash_poseidon2` host fn — the same Poseidon2 the engine's
+    authoritative derivation uses) and `Salt` identity-salt helpers
+    (`Salt::of`, `Salt::of_unordered_pair` with the sort-canonicalized
+    pair handled once, plus their pure `encoding` surfaces for
+    off-chain reproduction).
+  - `vectors/child_address.json` — the shared golden set every
+    implementation (engine KAT, 4 language bindings, rust/ts SDKs,
+    CLI) must reproduce byte-for-byte, anchored on the engine's pinned
+    KAT vector and covering zero/max/field-order edges plus
+    identity-salt cases (empty borsh, counters, i128/u128 extremes,
+    strings, unordered pairs, mixed tuples).
+  - Conformance tests in the Rust CI replay the whole set against the
+    reference `pyde-crypto` Poseidon2 (`=`-pinned dev-dependency; never
+    in contract wasm).
+  - `HOST_FN_ABI_SPEC.md`: §7.12 `instantiate` entry (wire signature,
+    error semantics incl. atomic ctor-revert refund and mergeability,
+    gas), the child-address derivation + anchor vector, the pinned
+    `Instantiated` event layout, §4 error codes `-40..-48` (with
+    `-41/-42/-47` reserved-dead), and the §10 gas-table row.
+  The `instantiate` extern itself lands in all four language bindings
+  together in the next release (the wire-name parity gate moves 40 → 41
+  atomically).
+
 ## [0.1.0-alpha.7] — 2026-07-03
 
 ### Added
