@@ -21,7 +21,13 @@
     "assembly/",
     "README.md"
   ],
+  "scripts": {
+    "test": "node tests/child.test.mjs"
+  },
   "peerDependencies": {
     "assemblyscript": ">=0.27.0"
+  },
+  "devDependencies": {
+    "assemblyscript": "^0.27.0"
   }
 }

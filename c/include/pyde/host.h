@@ -250,6 +250,40 @@ extern int32_t consume_gas(int64_t amount);
 PYDE_HOST_FN(beacon_get)
 extern int32_t beacon_get(uint8_t* out_ptr);
 
+/* ─────────────────────────────────────────────────────────────────────
+ * §7.12 Factory instantiation (PIP-0006)
+ * ─────────────────────────────────────────────────────────────────────
+ *
+ * Create a child instance of the DEPLOYED template contract at
+ * template_addr_ptr (32 bytes), addressed by
+ * child_address(self, template, salt) — by reference: the child
+ * shares the template's cached code. salt_ptr → 32 opaque
+ * caller-derived bytes; init_* → borsh ctor args (≤ 16384 bytes;
+ * zero for ctor-less templates); value_ptr → 16-byte LE u128
+ * endowment; gas_limit < 0 = forward all remaining.
+ *
+ * child_addr_out_ptr (32 bytes) is written on every path past the
+ * early cap/bounds checks (0, -40, -43, -44, -45, -46, -3 — NOT
+ * -48). Return data carries the ctor's return value on 0 and its
+ * revert payload VERBATIM on -40. Codes: -40 ctor reverted (ATOMIC
+ * refund); -43 template not a contract; -44 occupied by a
+ * NON-mergeable account; -45 nonempty init on a ctor-less template;
+ * -46 PIP-2 prefix collision; -48 per-tx cap (64); -3 balance <
+ * endowment. Traps from view/static frames and at depth >= 1024.
+ *
+ * gas: 20000 base + 8 per init byte + the ctor's own gas.
+ */
+PYDE_HOST_FN(instantiate)
+extern int32_t instantiate(
+    const uint8_t* template_addr_ptr,
+    const uint8_t* salt_ptr,
+    const uint8_t* init_calldata_ptr, int32_t init_calldata_len,
+    const uint8_t* value_ptr,
+    int64_t gas_limit,
+    uint8_t* child_addr_out_ptr,
+    uint8_t* return_data_out_ptr,
+    uint32_t* return_data_out_len_ptr);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

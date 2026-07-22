@@ -433,3 +433,42 @@ func ConsumeGas(amount int64) int32
 //
 //go:wasmimport pyde beacon_get
 func BeaconGet(outPtr int32) int32
+
+// ─────────────────────────────────────────────────────────────────────
+// §7.12 Factory instantiation (PIP-0006)
+// ─────────────────────────────────────────────────────────────────────
+
+// Instantiate creates a child instance of the DEPLOYED template
+// contract at templatePtr (32 bytes), addressed by
+// child_address(self, template, salt) — by reference: the child
+// shares the template's cached code, nothing is copied or
+// recompiled. saltPtr → 32 opaque caller-derived bytes; init* →
+// borsh ctor args (≤ 16384 bytes; zero for ctor-less templates);
+// valuePtr → 16-byte LE u128 endowment; gasLimit < 0 = forward all
+// remaining.
+//
+// childAddrOutPtr (32 bytes) is written on every path past the
+// early cap/bounds checks (0, -40, -43, -44, -45, -46, -3 — NOT
+// -48). Return data carries the ctor's return value on 0 and its
+// revert payload VERBATIM on -40.
+//
+// Returns 0, or: -40 ctor reverted (ATOMIC refund — no child,
+// endowment back); -43 template not a contract; -44 child address
+// occupied by a NON-mergeable account (balance-only EOA shells
+// merge instead); -45 nonempty init on a ctor-less template; -46
+// PIP-2 prefix collision; -48 per-tx cap (64); -3 balance <
+// endowment. Traps from view/static frames and at depth ≥ 1024.
+//
+// gas: 20000 base + 8 per init byte + the ctor's own gas.
+//
+//go:wasmimport pyde instantiate
+func Instantiate(
+	templatePtr int32,
+	saltPtr int32,
+	initCalldataPtr int32, initCalldataLen int32,
+	valuePtr int32,
+	gasLimit int64,
+	childAddrOutPtr int32,
+	returnDataOutPtr int32,
+	returnDataOutLenPtr int32,
+) int32

@@ -604,6 +604,45 @@ pub mod raw {
         ///
         /// gas: 50 base.
         pub fn beacon_get(out_ptr: *mut u8) -> i32;
+
+        // ─────────────────────────────────────────────────────────────────
+        // §7.12 Factory instantiation (PIP-0006)
+        // ─────────────────────────────────────────────────────────────────
+
+        /// Create a child instance of the DEPLOYED template contract at
+        /// `template_addr_ptr` (32 bytes), addressed by
+        /// `child_address(self, template, salt)` — by reference: the
+        /// child shares the template's cached code, nothing is copied
+        /// or recompiled. `salt_ptr` → 32 opaque caller-derived bytes;
+        /// `init_*` → borsh ctor args (≤ 16 384 bytes; empty for
+        /// ctor-less templates); `value_ptr` → 16-byte LE u128
+        /// endowment; `gas_limit` < 0 = forward all remaining.
+        ///
+        /// `child_addr_out_ptr` (32 bytes) is written on every path
+        /// past the early cap/bounds checks (0, -40, -43, -44, -45,
+        /// -46, -3 — NOT -48). Return data carries the ctor's return
+        /// value on 0 and its revert payload VERBATIM on -40.
+        ///
+        /// Returns 0, or: -40 ctor reverted (ATOMIC refund — no child,
+        /// endowment back); -43 template not a contract; -44 child
+        /// address occupied by a NON-mergeable account (balance-only
+        /// EOA shells merge instead); -45 nonempty init on a ctor-less
+        /// template; -46 PIP-2 prefix collision; -48 per-tx cap (64);
+        /// -3 balance < endowment. Traps from view/static frames and
+        /// at depth ≥ 1024. Prefer the [`crate::prepare`] builder.
+        ///
+        /// gas: 20 000 base + 8 per init byte + the ctor's own gas.
+        pub fn instantiate(
+            template_addr_ptr: *const u8,
+            salt_ptr: *const u8,
+            init_calldata_ptr: *const u8,
+            init_calldata_len: i32,
+            value_ptr: *const u8,
+            gas_limit: i64,
+            child_addr_out_ptr: *mut u8,
+            return_data_out_ptr: *mut u8,
+            return_data_out_len_ptr: *mut u32,
+        ) -> i32;
     }
 } // end pub mod raw
 
@@ -1347,6 +1386,215 @@ impl Salt {
     }
 }
 
+/// Why a `pyde::instantiate` failed, in typed form. Maps the chain's
+/// i32 codes (HOST_FN_ABI_SPEC §7.12) + surfaces the payloads that
+/// make each failure actionable.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstantiateError {
+    /// The child's constructor reverted. The WHOLE instantiate
+    /// unwound atomically — no child account, no child storage, the
+    /// endowment refunded — so this costs gas only, never value.
+    /// `payload` is the ctor's revert payload, verbatim.
+    /// Chain code: -40.
+    CtorReverted {
+        /// The child ctor's revert payload (its `revert(msg)` bytes).
+        payload: alloc::vec::Vec<u8>,
+    },
+    /// A NON-mergeable account already sits at the derived child
+    /// address — this `(template, salt)` was already instantiated
+    /// (or the address is otherwise taken). `addr` is that address,
+    /// straight from the host fn's out-param: the idempotent-factory
+    /// idiom is one match arm, zero re-derivation. Chain code: -44.
+    Exists {
+        /// The (occupied) derived child address.
+        addr: Address,
+    },
+    /// The template address is not a code-bearing contract.
+    /// Chain code: -43.
+    TemplateNotFound,
+    /// Non-empty init calldata against a template with no
+    /// constructor. Ctor-less templates: don't call `.args()`.
+    /// Chain code: -45.
+    CtorMismatch,
+    /// PIP-2 16-byte prefix-registry collision. Chain code: -46.
+    PrefixCollision,
+    /// `MAX_INSTANTIATES_PER_TX` (64) exceeded for this transaction.
+    /// Chain code: -48.
+    CapExceeded,
+    /// The factory's balance can't cover the endowment.
+    /// Chain code: -3.
+    InsufficientBalance,
+    /// A code this wrapper doesn't recognize (newer chain than SDK).
+    Unexpected(
+        /// The raw i32 status the host fn returned.
+        i32,
+    ),
+}
+
+impl InstantiateError {
+    /// If the child ctor reverted with a UTF-8 message, decode it.
+    #[must_use]
+    pub fn revert_message(&self) -> Option<alloc::string::String> {
+        match self {
+            InstantiateError::CtorReverted { payload } => {
+                alloc::string::String::from_utf8(payload.clone()).ok()
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Start an [`Instantiate`] — create a child instance of the deployed
+/// template contract at `template`, addressed by `salt`.
+///
+/// `prepare` is PURE: it only fills an in-memory builder — nothing
+/// touches the chain until [`Instantiate::instantiate`] runs, so an
+/// unfired builder is free. Configure with [`args`](Instantiate::args)
+/// / [`value`](Instantiate::value) / [`gas`](Instantiate::gas)
+/// (in-place, so conditional configuration reads naturally), then
+/// execute:
+///
+/// ```ignore
+/// // one-liner
+/// let child = pyde::prepare(&template, &salt)
+///     .args(&(token0, token1, fee_rate))
+///     .value(1_000_000_000)
+///     .instantiate()?;
+///
+/// // prepare now, decide later
+/// let mut prep = pyde::prepare(&template, &salt);
+/// prep.args(&(token0, token1));
+/// if needs_funding {
+///     prep.value(1_000_000_000);
+/// }
+/// let child = prep.instantiate()?;
+///
+/// // idempotent factory: -44 hands the address back
+/// let pool = match pyde::prepare(&template, &salt).instantiate() {
+///     Ok(addr) | Err(pyde::InstantiateError::Exists { addr }) => addr,
+///     Err(e) => pyde::revert(e.revert_message().as_deref().unwrap_or("instantiate failed")),
+/// };
+/// ```
+#[inline]
+#[must_use]
+pub fn prepare(template: &Address, salt: &[u8; 32]) -> Instantiate {
+    Instantiate {
+        template: *template,
+        salt: *salt,
+        init: alloc::vec::Vec::new(),
+        value: 0,
+        gas: FORWARD_ALL_CTOR_GAS,
+    }
+}
+
+/// Forward the frame's full remaining gas to the child constructor —
+/// `pyde::instantiate`'s convention is NEGATIVE = forward-all (unlike
+/// `cross_call`'s `i64::MAX`).
+pub const FORWARD_ALL_CTOR_GAS: i64 = -1;
+
+/// A prepared-but-unfired `pyde::instantiate` — built by
+/// [`prepare`], executed by [`Instantiate::instantiate`].
+///
+/// Owns everything it holds ([`args`](Self::args) encodes eagerly
+/// into owned bytes), so it can be stored, moved across scopes, and
+/// fired inside a branch.
+#[derive(Debug, Clone)]
+pub struct Instantiate {
+    template: Address,
+    salt: [u8; 32],
+    init: alloc::vec::Vec<u8>,
+    value: u128,
+    gas: i64,
+}
+
+impl Instantiate {
+    /// Constructor args as raw typed values — encoded EAGERLY into
+    /// one owned borsh tuple (frameless field concatenation, exactly
+    /// what the child's `#[pyde::entry]` ctor decodes). Pass the
+    /// values themselves, never pre-encoded blobs (a `Vec<u8>`
+    /// would get borsh's length prefix and corrupt the calldata).
+    /// Ctor-less template? Don't call this at all (avoids -45).
+    #[inline]
+    pub fn args<T: borsh::BorshSerialize>(&mut self, args: &T) -> &mut Self {
+        self.init = borsh::to_vec(args).expect("instantiate: borsh encoding failed");
+        self
+    }
+
+    /// Escape hatch: pre-encoded init calldata, verbatim — for
+    /// dynamic templates where the arg shape isn't known at compile
+    /// time. Most factories want [`args`](Self::args).
+    #[inline]
+    pub fn raw_args(&mut self, init: &[u8]) -> &mut Self {
+        self.init = init.to_vec();
+        self
+    }
+
+    /// Endowment (quanta) to fund the child account with. Funds the
+    /// ACCOUNT (like deploy value) — no payable gate; the ctor sees
+    /// it via `pyde::ctx::tx_value()`. Refunded if the ctor reverts.
+    #[inline]
+    pub fn value(&mut self, quanta: u128) -> &mut Self {
+        self.value = quanta;
+        self
+    }
+
+    /// Gas budget for the child constructor. Default: forward all
+    /// remaining ([`FORWARD_ALL_CTOR_GAS`]).
+    #[inline]
+    pub fn gas(&mut self, limit: i64) -> &mut Self {
+        self.gas = limit;
+        self
+    }
+
+    /// Execute the instantiate — the ONLY method that touches the
+    /// chain. Returns the child's address; the child is live,
+    /// endowed, and constructed. See [`InstantiateError`] for the
+    /// failure taxonomy (all failures are atomic: no half-born
+    /// children, endowment never lost).
+    pub fn instantiate(&self) -> Result<Address, InstantiateError> {
+        use alloc::vec;
+
+        let mut child: Address = [0u8; 32];
+        let mut ret: alloc::vec::Vec<u8> = vec![0u8; call::DEFAULT_RETURN_BUFFER_BYTES];
+        let mut ret_len: [u8; 4] = (ret.len() as u32).to_le_bytes();
+        let value_bytes = self.value.to_le_bytes();
+
+        let status = unsafe {
+            raw::instantiate(
+                self.template.as_ptr(),
+                self.salt.as_ptr(),
+                self.init.as_ptr(),
+                self.init.len() as i32,
+                value_bytes.as_ptr(),
+                self.gas,
+                child.as_mut_ptr(),
+                ret.as_mut_ptr(),
+                ret_len.as_mut_ptr() as *mut u32,
+            )
+        };
+
+        match status {
+            0 => Ok(child),
+            -40 => {
+                // Ctor revert payload was copied into our buffer
+                // (truncated to capacity if oversized — the child is
+                // gone either way, the payload is advisory).
+                let actual = u32::from_le_bytes(ret_len) as usize;
+                ret.truncate(actual.min(call::DEFAULT_RETURN_BUFFER_BYTES));
+                Err(InstantiateError::CtorReverted { payload: ret })
+            }
+            -44 => Err(InstantiateError::Exists { addr: child }),
+            -43 => Err(InstantiateError::TemplateNotFound),
+            -45 => Err(InstantiateError::CtorMismatch),
+            -46 => Err(InstantiateError::PrefixCollision),
+            -48 => Err(InstantiateError::CapExceeded),
+            -3 => Err(InstantiateError::InsufficientBalance),
+            other => Err(InstantiateError::Unexpected(other)),
+        }
+    }
+}
+
 /// Conformance suite for the child-address derivation + salt helpers.
 ///
 /// Everything here runs HOST-SIDE (no chain): the preimage assembly
@@ -1617,6 +1865,45 @@ mod conformance {
     }
 
     // ── the tests ───────────────────────────────────────────────────
+
+    /// `prepare` is pure and the builder owns its bytes: `.args`
+    /// encodes EAGERLY, so the source values can die before
+    /// `.instantiate()` fires (the store-then-fire-later pattern).
+    #[test]
+    fn builder_encodes_args_eagerly_and_owned() {
+        let mut prep = super::prepare(&[0xAA; 32], &[0x11; 32]);
+        {
+            let tmp = ([0xCC_u8; 32], 42_u64, true);
+            prep.args(&tmp);
+        } // tmp dropped — the builder must hold owned bytes
+        assert_eq!(prep.init, Salt::encoding(&([0xCC_u8; 32], 42_u64, true)));
+        assert_eq!(prep.value, 0, "no endowment unless asked");
+        assert_eq!(prep.gas, super::FORWARD_ALL_CTOR_GAS, "forward-all default");
+        assert_eq!(prep.template, [0xAA; 32]);
+        assert_eq!(prep.salt, [0x11; 32]);
+    }
+
+    /// Setters chain AND mutate in place, so conditional
+    /// configuration (`if x { prep.value(v); }`) works exactly as
+    /// ratified.
+    #[test]
+    fn builder_chains_and_configures_in_place() {
+        let mut prep = super::prepare(&[0xAA; 32], &[0x11; 32]);
+        prep.args(&(7_u64,)).value(500).gas(200_000);
+        assert_eq!(prep.init, Salt::encoding(&(7_u64,)));
+        assert_eq!(prep.value, 500);
+        assert_eq!(prep.gas, 200_000);
+        if prep.value < 1_000 {
+            prep.value(1_000);
+        }
+        assert_eq!(prep.value, 1_000);
+        prep.raw_args(&[1, 2, 3]);
+        assert_eq!(
+            prep.init,
+            alloc::vec![1, 2, 3],
+            "raw_args replaces verbatim"
+        );
+    }
 
     /// The engine's pinned KAT, reproduced independently. If this
     /// trips, the preimage layout or Poseidon2 binding drifted — fix
