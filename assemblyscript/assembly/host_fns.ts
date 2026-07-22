@@ -260,7 +260,7 @@ export declare function consume_gas(amount: i64): i32;
 export declare function beacon_get(out_ptr: usize): i32;
 
 // ─────────────────────────────────────────────────────────────────────
-// §7.12 Factory instantiation (PIP-0006)
+// §7.12 Factory instantiation
 // ─────────────────────────────────────────────────────────────────────
 //
 // Create a child instance of the DEPLOYED template contract at

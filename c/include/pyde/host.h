@@ -251,7 +251,7 @@ PYDE_HOST_FN(beacon_get)
 extern int32_t beacon_get(uint8_t* out_ptr);
 
 /* ─────────────────────────────────────────────────────────────────────
- * §7.12 Factory instantiation (PIP-0006)
+ * §7.12 Factory instantiation
  * ─────────────────────────────────────────────────────────────────────
  *
  * Create a child instance of the DEPLOYED template contract at

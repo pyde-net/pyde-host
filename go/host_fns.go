@@ -435,7 +435,7 @@ func ConsumeGas(amount int64) int32
 func BeaconGet(outPtr int32) int32
 
 // ─────────────────────────────────────────────────────────────────────
-// §7.12 Factory instantiation (PIP-0006)
+// §7.12 Factory instantiation
 // ─────────────────────────────────────────────────────────────────────
 
 // Instantiate creates a child instance of the DEPLOYED template

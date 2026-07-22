@@ -1,5 +1,5 @@
-// Child-address preimage helpers for the Pyde factory pattern
-// (PIP-0006). This header owns the two DRIFT-CRITICAL byte
+// Child-address preimage helpers for the Pyde factory pattern.
+// This header owns the two DRIFT-CRITICAL byte
 // constructions every factory contract repeats:
 //
 //   child_address = Poseidon2("pyde-child:" || parent[32]

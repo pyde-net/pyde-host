@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Emit c/tests/vectors_gen.h from vectors/child_address.json.
 
-Decodes the golden child-address vectors (PIP-0006) into a static C
+Decodes the golden child-address vectors into a static C
 array so c/tests/child_test.c can recompute every preimage without a
 JSON parser. Deterministic: vector order preserved, fixed formatting,
 no timestamps. stdlib only.

@@ -1,4 +1,4 @@
-// Factory (PIP-0006) child-address derivation — HOST_FN_ABI_SPEC §7.12.
+// Factory child-address derivation — HOST_FN_ABI_SPEC §7.12.
 //
 //   child_address = Poseidon2("pyde-child:" ‖ parent[32] ‖ template[32] ‖ salt[32])
 //
