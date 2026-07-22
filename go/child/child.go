@@ -1,5 +1,5 @@
 // Package child implements the byte-assembly half of Pyde child-contract
-// addressing (PIP-0006, pyde::instantiate).
+// addressing (pyde::instantiate).
 //
 //	child_address = Poseidon2("pyde-child:" || parent[32] || template[32] || salt[32])
 //

@@ -8,11 +8,11 @@ and this project's versioning tracks the `HOST_FN_ABI_SPEC` version — see
 
 ## [0.1.0-alpha.9] — 2026-07-22
 
-The factory release: `pyde::instantiate` (PIP-0006) across the whole
+The factory release: `pyde::instantiate` across the whole
 toolchain surface — 41 host functions.
 
 ### Added
-- **Factory pattern (PIP-0006) groundwork — canonical child-address
+- **Factory pattern groundwork — canonical child-address
   derivation + golden conformance vectors.** The engine's
   `pyde::instantiate` host fn (the 41st, shipped engine-side) addresses
   children by `Poseidon2("pyde-child:" ‖ parent ‖ template ‖ salt)`

@@ -606,7 +606,7 @@ pub mod raw {
         pub fn beacon_get(out_ptr: *mut u8) -> i32;
 
         // ─────────────────────────────────────────────────────────────────
-        // §7.12 Factory instantiation (PIP-0006)
+        // §7.12 Factory instantiation
         // ─────────────────────────────────────────────────────────────────
 
         /// Create a child instance of the DEPLOYED template contract at
@@ -1249,7 +1249,7 @@ pub mod call {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Factory pattern (PIP-0006) — child-address derivation + salt helpers
+// Factory pattern — child-address derivation + salt helpers
 // ─────────────────────────────────────────────────────────────────────
 //
 // A factory contract creates child instances of a deployed TEMPLATE
@@ -1850,7 +1850,7 @@ mod conformance {
     fn render_file() -> VectorFile {
         VectorFile {
             meta: Meta {
-                description: "Golden conformance vectors for the Pyde factory (PIP-0006) \
+                description: "Golden conformance vectors for the Pyde factory \
                               child-address derivation. Every implementation (engine, 4 \
                               language bindings, rust/ts SDKs, CLI) must reproduce every \
                               vector byte-for-byte."

@@ -1000,7 +1000,7 @@ a hidden seed. For inputs an adversary must not be able to predict (sealed bids,
 ordering), use a commit-reveal scheme at the transaction layer instead.
 ```
 
-### 7.12 Factory instantiation (PIP-0006)
+### 7.12 Factory instantiation
 
 Added in ABI v1.3 — the 41st core host function. A contract (the FACTORY) creates a
 child instance of an already-deployed TEMPLATE contract **by reference**: the child is

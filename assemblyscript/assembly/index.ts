@@ -3,6 +3,6 @@
 
 export * from "./host_fns";
 
-// Factory (PIP-0006) child-address helpers — childPreimage /
+// Factory child-address helpers — childPreimage /
 // unorderedPairEncoding / childAddress.
 export * from "./child";
