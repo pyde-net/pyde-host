@@ -1,0 +1,39 @@
+{
+  "name": "@pyde-net/sdk",
+  "version": "0.1.0-alpha.9",
+  "description": "Pointer-free AssemblyScript SDK for Pyde contracts: LE codecs, 128-bit math, borsh, and ergonomic host-function wrappers over @pyde-net/host.",
+  "author": "zarah <zarah@pyde.network>",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pyde-net/pyde-host"
+  },
+  "keywords": [
+    "pyde",
+    "wasm",
+    "blockchain",
+    "contract",
+    "assemblyscript",
+    "borsh"
+  ],
+  "main": "assembly/index.ts",
+  "types": "assembly/index.ts",
+  "files": [
+    "assembly/",
+    "README.md"
+  ],
+  "scripts": {
+    "asbuild": "asc assembly/index.ts --outFile build/sdk.wasm --target release",
+    "test": "node tests/codec_parity.spec.mjs"
+  },
+  "peerDependencies": {
+    "assemblyscript": ">=0.27.0"
+  },
+  "dependencies": {
+    "@pyde-net/host": "file:../assemblyscript",
+    "as-bignum": "^0.3.1"
+  },
+  "devDependencies": {
+    "assemblyscript": "^0.27.0"
+  }
+}

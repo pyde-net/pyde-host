@@ -1,0 +1,298 @@
+{
+  "_meta": {
+    "borsh_rules": "ints = fixed-width LE two's-complement; bool = 1 byte 0/1; address/hash32 = 32 raw bytes (no prefix); bytes/string = u32_le(len) + payload; vec<T> = u32_le(len) + fixed-stride elements.",
+    "description": "Golden borsh-encoding vectors for @pyde-net/sdk codec parity. Every value is encoded by the reference `borsh::to_vec`; the AssemblyScript SDK must reproduce every `borsh` field byte-for-byte.",
+    "generator": "cargo test -p pyde-host --test codec_borsh_goldens regenerate -- --ignored",
+    "input_encoding": "decimal string (ints), JSON bool, hex string (address/hash32/bytes), raw string (string), array of decimal strings (vec_u64)."
+  },
+  "vectors": [
+    {
+      "name": "u8_zero",
+      "type": "u8",
+      "input": "0",
+      "borsh": "00"
+    },
+    {
+      "name": "u8_one",
+      "type": "u8",
+      "input": "1",
+      "borsh": "01"
+    },
+    {
+      "name": "u8_max",
+      "type": "u8",
+      "input": "255",
+      "borsh": "ff"
+    },
+    {
+      "name": "u16_zero",
+      "type": "u16",
+      "input": "0",
+      "borsh": "0000"
+    },
+    {
+      "name": "u16_mid",
+      "type": "u16",
+      "input": "258",
+      "borsh": "0201"
+    },
+    {
+      "name": "u16_max",
+      "type": "u16",
+      "input": "65535",
+      "borsh": "ffff"
+    },
+    {
+      "name": "u32_zero",
+      "type": "u32",
+      "input": "0",
+      "borsh": "00000000"
+    },
+    {
+      "name": "u32_one",
+      "type": "u32",
+      "input": "1",
+      "borsh": "01000000"
+    },
+    {
+      "name": "u32_max",
+      "type": "u32",
+      "input": "4294967295",
+      "borsh": "ffffffff"
+    },
+    {
+      "name": "u64_zero",
+      "type": "u64",
+      "input": "0",
+      "borsh": "0000000000000000"
+    },
+    {
+      "name": "u64_one",
+      "type": "u64",
+      "input": "1",
+      "borsh": "0100000000000000"
+    },
+    {
+      "name": "u64_max",
+      "type": "u64",
+      "input": "18446744073709551615",
+      "borsh": "ffffffffffffffff"
+    },
+    {
+      "name": "u128_zero",
+      "type": "u128",
+      "input": "0",
+      "borsh": "00000000000000000000000000000000"
+    },
+    {
+      "name": "u128_one",
+      "type": "u128",
+      "input": "1",
+      "borsh": "01000000000000000000000000000000"
+    },
+    {
+      "name": "u128_max",
+      "type": "u128",
+      "input": "340282366920938463463374607431768211455",
+      "borsh": "ffffffffffffffffffffffffffffffff"
+    },
+    {
+      "name": "i8_min",
+      "type": "i8",
+      "input": "-128",
+      "borsh": "80"
+    },
+    {
+      "name": "i8_neg_one",
+      "type": "i8",
+      "input": "-1",
+      "borsh": "ff"
+    },
+    {
+      "name": "i8_max",
+      "type": "i8",
+      "input": "127",
+      "borsh": "7f"
+    },
+    {
+      "name": "i16_min",
+      "type": "i16",
+      "input": "-32768",
+      "borsh": "0080"
+    },
+    {
+      "name": "i16_neg_one",
+      "type": "i16",
+      "input": "-1",
+      "borsh": "ffff"
+    },
+    {
+      "name": "i16_max",
+      "type": "i16",
+      "input": "32767",
+      "borsh": "ff7f"
+    },
+    {
+      "name": "i32_min",
+      "type": "i32",
+      "input": "-2147483648",
+      "borsh": "00000080"
+    },
+    {
+      "name": "i32_neg_one",
+      "type": "i32",
+      "input": "-1",
+      "borsh": "ffffffff"
+    },
+    {
+      "name": "i32_max",
+      "type": "i32",
+      "input": "2147483647",
+      "borsh": "ffffff7f"
+    },
+    {
+      "name": "i64_min",
+      "type": "i64",
+      "input": "-9223372036854775808",
+      "borsh": "0000000000000080"
+    },
+    {
+      "name": "i64_neg_one",
+      "type": "i64",
+      "input": "-1",
+      "borsh": "ffffffffffffffff"
+    },
+    {
+      "name": "i64_max",
+      "type": "i64",
+      "input": "9223372036854775807",
+      "borsh": "ffffffffffffff7f"
+    },
+    {
+      "name": "i128_min",
+      "type": "i128",
+      "input": "-170141183460469231731687303715884105728",
+      "borsh": "00000000000000000000000000000080"
+    },
+    {
+      "name": "i128_neg_one",
+      "type": "i128",
+      "input": "-1",
+      "borsh": "ffffffffffffffffffffffffffffffff"
+    },
+    {
+      "name": "i128_max",
+      "type": "i128",
+      "input": "170141183460469231731687303715884105727",
+      "borsh": "ffffffffffffffffffffffffffffff7f"
+    },
+    {
+      "name": "bool_false",
+      "type": "bool",
+      "input": false,
+      "borsh": "00"
+    },
+    {
+      "name": "bool_true",
+      "type": "bool",
+      "input": true,
+      "borsh": "01"
+    },
+    {
+      "name": "address_zero",
+      "type": "address",
+      "input": "0000000000000000000000000000000000000000000000000000000000000000",
+      "borsh": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "address_incrementing",
+      "type": "address",
+      "input": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "borsh": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "name": "address_max",
+      "type": "address",
+      "input": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "borsh": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "name": "hash32_zero",
+      "type": "hash32",
+      "input": "0000000000000000000000000000000000000000000000000000000000000000",
+      "borsh": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "hash32_incrementing",
+      "type": "hash32",
+      "input": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "borsh": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "name": "hash32_max",
+      "type": "hash32",
+      "input": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "borsh": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "name": "bytes_empty",
+      "type": "bytes",
+      "input": "",
+      "borsh": "00000000"
+    },
+    {
+      "name": "bytes_single",
+      "type": "bytes",
+      "input": "aa",
+      "borsh": "01000000aa"
+    },
+    {
+      "name": "bytes_multi",
+      "type": "bytes",
+      "input": "000102feff",
+      "borsh": "05000000000102feff"
+    },
+    {
+      "name": "string_empty",
+      "type": "string",
+      "input": "",
+      "borsh": "00000000"
+    },
+    {
+      "name": "string_ascii",
+      "type": "string",
+      "input": "hi",
+      "borsh": "020000006869"
+    },
+    {
+      "name": "string_unicode",
+      "type": "string",
+      "input": "héllo🚀",
+      "borsh": "0a00000068c3a96c6c6ff09f9a80"
+    },
+    {
+      "name": "vec_u64_empty",
+      "type": "vec_u64",
+      "input": [],
+      "borsh": "00000000"
+    },
+    {
+      "name": "vec_u64_single",
+      "type": "vec_u64",
+      "input": [
+        "1"
+      ],
+      "borsh": "010000000100000000000000"
+    },
+    {
+      "name": "vec_u64_multi",
+      "type": "vec_u64",
+      "input": [
+        "1",
+        "2",
+        "18446744073709551615"
+      ],
+      "borsh": "0300000001000000000000000200000000000000ffffffffffffffff"
+    }
+  ]
+}
