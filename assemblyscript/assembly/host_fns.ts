@@ -132,11 +132,15 @@ export declare function chain_id(): i64;
 // §7.4 Transaction context
 // ─────────────────────────────────────────────────────────────────────
 
+// The engine registers both as `(out_ptr: i32) -> ()` — they always write
+// their fixed-size buffer and never fail, so there is no result. wasmtime
+// type-checks imports including results, so declaring an i32 result here makes
+// any contract that calls tx_hash/tx_value fail instantiation on-chain.
 @external("pyde", "tx_hash")
-export declare function tx_hash(hash_out_ptr: usize): i32;
+export declare function tx_hash(hash_out_ptr: usize): void;
 
 @external("pyde", "tx_value")
-export declare function tx_value(value_out_ptr: usize): i32;
+export declare function tx_value(value_out_ptr: usize): void;
 
 @external("pyde", "tx_gas_remaining")
 export declare function tx_gas_remaining(): i64;
