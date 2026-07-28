@@ -599,8 +599,8 @@ pub mod raw {
 
         /// Current wave's committee-derived VRF beacon (32 bytes).
         /// Deterministic, public randomness. NB: publicly predictable
-        /// within a wave — use threshold encryption if you need
-        /// adversary-private randomness.
+        /// within a wave, so do not use it where you need randomness an
+        /// adversary cannot anticipate.
         ///
         /// gas: 50 base.
         pub fn beacon_get(out_ptr: *mut u8) -> i32;
