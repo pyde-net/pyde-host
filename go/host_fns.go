@@ -1,3 +1,5 @@
+//go:build tinygo
+
 // Canonical Pyde host fn declarations for TinyGo contracts — the
 // entire pyde::* ABI a TinyGo contract can call into. Every fn here
 // is declared in HOST_FN_ABI_SPEC §7
