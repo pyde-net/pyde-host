@@ -99,8 +99,11 @@ func (e *Encoder) VecU64(vs []uint64) *Encoder {
 }
 
 // Decoder reads a borsh byte stream with a forward cursor. Every read is
-// bounds-checked; an underrun panics, which on-chain routes to `pyde.revert`
-// (so malformed/short calldata reverts rather than reading out of bounds).
+// bounds-checked; an underrun panics. Under TinyGo that panic aborts the
+// call via a wasm `unreachable` trap: the transaction fails and all state
+// is discarded (never an out-of-bounds read), but unlike an explicit
+// Revert the trap surfaces no reason payload. Validate up front and call
+// Revert when you want a caller-visible message.
 type Decoder struct {
 	buf []byte
 	pos int
