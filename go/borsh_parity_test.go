@@ -31,6 +31,12 @@ type borshVector struct {
 func loadBorshGoldens(t *testing.T) []borshVector {
 	t.Helper()
 	raw, err := os.ReadFile("../vectors/codec_borsh.json")
+	if os.IsNotExist(err) {
+		// The shared goldens land with the AssemblyScript SDK PR. Until
+		// then they may be absent on main; skip so main stays green, and
+		// the parity check activates automatically once they arrive.
+		t.Skip("vectors/codec_borsh.json not present yet; skipping borsh parity")
+	}
 	if err != nil {
 		t.Fatalf("read goldens: %v", err)
 	}
