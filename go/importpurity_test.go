@@ -1,50 +1,69 @@
 package pyde
 
-// Import-purity gate: builds a probe contract that exercises the wrapper
-// surface with TinyGo, then parses the resulting wasm's import section and
-// asserts every import is a known `pyde` host fn — no `env`, no WASI, no
-// stray module. A contract that imports anything outside `pyde` is rejected
-// by the engine at instantiation, so catching it here turns a deploy-time
-// failure into a test failure.
+// Import-purity + signature-parity gate: builds a probe contract that
+// exercises the whole wrapper surface with TinyGo, then parses the resulting
+// wasm and asserts every import is (1) from module `pyde`, (2) a known host-fn
+// wire name, and (3) declared with the EXACT WASM signature the engine
+// registers. The third check is the important one: it proves TinyGo lowered
+// each raw //go:wasmimport stub to the same (params) -> (results) the engine's
+// linker expects, so a result-arity or width drift (e.g. the balance/tx_hash/
+// tx_value/consume_gas i32->void fixes) can never silently regress — a mismatch
+// here is the same rejection the engine would raise at on-chain instantiation.
 //
-// Native test (no build tag): it shells out to TinyGo and parses bytes;
-// it does not itself import the tinygo-only wrappers. Skips when TinyGo is
-// not installed so `go test ./...` stays green on machines without it.
+// Native test (no build tag): shells out to TinyGo, parses bytes. Skips when
+// TinyGo is absent so `go test ./...` stays green without it.
 
 import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-// knownHostFns is the allowlisted set of wire names a contract may import.
-// Kept in sync with host_fns.go / HOST_FN_ABI_SPEC §7 (+ §8 parachain,
-// §9 test-only). A wire-name typo in a //go:wasmimport directive surfaces
-// here as an unknown import.
-var knownHostFns = map[string]bool{
-	"sload": true, "sstore": true, "sdelete": true,
-	"sstore_scalar": true, "sload_scalar": true, "sdelete_scalar": true,
-	"sstore_map1": true, "sload_map1": true, "sdelete_map1": true,
-	"sstore_map2": true, "sload_map2": true, "sdelete_map2": true,
-	"sstore_map3": true, "sload_map3": true, "sdelete_map3": true,
-	"balance": true, "transfer": true,
-	"caller": true, "origin": true, "self_address": true,
-	"wave_id": true, "wave_timestamp": true, "chain_id": true,
-	"tx_hash": true, "tx_value": true, "tx_gas_remaining": true,
-	"calldata_size": true, "calldata_copy": true,
-	"emit_event":  true,
-	"hash_blake3": true, "hash_poseidon2": true, "hash_keccak256": true,
-	"falcon_verify": true,
-	"cross_call":    true, "cross_call_static": true, "delegate_call": true,
-	"return": true, "revert": true,
-	"consume_gas": true, "beacon_get": true, "instantiate": true,
+// hostFnSig mirrors otigen-abi's host_fn_signature table (HOST_FN_ABI_SPEC §7):
+// wire name -> "params;results", each a comma-joined valtype list ("" = none).
+// i = i32, I = i64. Kept in lockstep with host_fns.go / the engine.
+var hostFnSig = map[string]string{
+	// §7.1 storage — raw
+	"sload": "i,i,i;i", "sstore": "i,i,i;", "sdelete": "i;",
+	// §7.1 typed storage
+	"sstore_scalar": "i,i,i,i;i", "sload_scalar": "i,i,i,i;i", "sdelete_scalar": "i,i;i",
+	"sstore_map1": "i,i,i,i,i,i;i", "sload_map1": "i,i,i,i,i,i;i", "sdelete_map1": "i,i,i,i;i",
+	"sstore_map2": "i,i,i,i,i,i,i,i;i", "sload_map2": "i,i,i,i,i,i,i,i;i", "sdelete_map2": "i,i,i,i,i,i;i",
+	"sstore_map3": "i,i,i,i,i,i,i,i,i,i;i", "sload_map3": "i,i,i,i,i,i,i,i,i,i;i", "sdelete_map3": "i,i,i,i,i,i,i,i;i",
+	// §7.2 account
+	"balance": "i,i;", "transfer": "i,i;i",
+	// §7.3 context
+	"caller": "i;i", "origin": "i;i", "self_address": "i;i",
+	"wave_id": ";I", "wave_timestamp": ";I", "chain_id": ";I",
+	// §7.4 tx context
+	"tx_hash": "i;", "tx_value": "i;", "tx_gas_remaining": ";I",
+	"calldata_size": ";i", "calldata_copy": "i,i;i",
+	// §7.5 events
+	"emit_event": "i,i,i,i;i",
+	// §7.6 hashing
+	"hash_blake3": "i,i,i;", "hash_poseidon2": "i,i,i;", "hash_keccak256": "i,i,i;",
+	// §7.7 PQ
+	"falcon_verify": "i,i,i,i,i;i",
+	// §7.8 cross-contract
+	"cross_call":        "i,i,i,i,i,i,I,i,i;i",
+	"cross_call_static": "i,i,i,i,i,I,i,i;i",
+	"delegate_call":     "i,i,i,i,i,I,i,i;i",
+	// §7.9 halt
+	"return": "i,i;", "revert": "i,i;",
+	// §7.10 gas
+	"consume_gas": "I;",
+	// §7.11 beacon
+	"beacon_get": "i;i",
+	// §7.12 factory
+	"instantiate": "i,i,i,i,i,I,i,i,i;i",
 }
 
-func TestImportPurity(t *testing.T) {
+func TestImportPurityAndSignatures(t *testing.T) {
 	tinygo, err := exec.LookPath("tinygo")
 	if err != nil {
-		t.Skip("tinygo not installed; skipping import-purity gate")
+		t.Skip("tinygo not installed; skipping import gate")
 	}
 
 	out := filepath.Join(t.TempDir(), "probe.wasm")
@@ -54,7 +73,6 @@ func TestImportPurity(t *testing.T) {
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("tinygo build failed: %v\n%s", err, b)
 	}
-
 	wasm, err := os.ReadFile(out)
 	if err != nil {
 		t.Fatalf("read probe wasm: %v", err)
@@ -64,25 +82,36 @@ func TestImportPurity(t *testing.T) {
 		t.Fatalf("parse imports: %v", err)
 	}
 	if len(imports) == 0 {
-		t.Fatal("probe imported nothing — build likely stripped everything; check the probe")
+		t.Fatal("probe imported nothing — build likely stripped everything")
 	}
 
 	t.Logf("probe imports %d host fns", len(imports))
 	for _, im := range imports {
 		if im.module != "pyde" {
-			t.Errorf("non-pyde import: %s.%s (contract would fail on-chain instantiation)", im.module, im.name)
+			t.Errorf("non-pyde import %s.%s — would fail on-chain instantiation", im.module, im.name)
 			continue
 		}
-		if !knownHostFns[im.name] {
+		want, ok := hostFnSig[im.name]
+		if !ok {
 			t.Errorf("unknown pyde import %q — not in HOST_FN_ABI_SPEC allowlist (wire-name typo?)", im.name)
+			continue
+		}
+		got := im.params + ";" + im.results
+		if got != want {
+			t.Errorf("signature drift for %q: engine expects (%s), wasm declares (%s)", im.name, want, got)
 		}
 	}
 }
 
-type wasmImport struct{ module, name string }
+type wasmImport struct {
+	module, name    string
+	params, results string // comma-joined valtypes ("i"=i32, "I"=i64), "" = none
+}
 
-// parseWasmImports reads the import section (id 2) of a wasm module and
-// returns its (module, name) entries. Pure Go, no wasm runtime.
+// parseWasmImports reads the type section (id 1) and import section (id 2) of a
+// wasm module and returns each function import with its resolved signature.
+// Pure Go, no wasm runtime. Valid wasm orders section 1 before 2, so a single
+// forward pass resolves func-import typeidx against the type table.
 func parseWasmImports(d []byte) ([]wasmImport, error) {
 	if len(d) < 8 || string(d[:4]) != "\x00asm" {
 		return nil, errBadWasm
@@ -116,12 +145,24 @@ func parseWasmImports(d []byte) ([]wasmImport, error) {
 		pos += int(n)
 		return s, nil
 	}
+	valtype := func(b byte) string {
+		switch b {
+		case 0x7f:
+			return "i"
+		case 0x7e:
+			return "I"
+		case 0x7d:
+			return "f32"
+		case 0x7c:
+			return "f64"
+		default:
+			return "?"
+		}
+	}
 
+	var types []string // typeidx -> "params;results"
 	var imports []wasmImport
 	for pos < len(d) {
-		if pos >= len(d) {
-			break
-		}
 		sid := d[pos]
 		pos++
 		size, err := uleb()
@@ -132,49 +173,82 @@ func parseWasmImports(d []byte) ([]wasmImport, error) {
 		if end > len(d) {
 			return nil, errTruncated
 		}
-		if sid != 2 { // only care about the import section
-			pos = end
-			continue
-		}
-		count, err := uleb()
-		if err != nil {
-			return nil, err
-		}
-		for i := uint64(0); i < count; i++ {
-			mod, err := readName()
+		switch sid {
+		case 1: // type section
+			count, err := uleb()
 			if err != nil {
 				return nil, err
 			}
-			nm, err := readName()
+			for i := uint64(0); i < count; i++ {
+				if pos >= len(d) || d[pos] != 0x60 {
+					return nil, errBadWasm // not a functype
+				}
+				pos++
+				pc, err := uleb()
+				if err != nil {
+					return nil, err
+				}
+				ps := make([]string, pc)
+				for j := range ps {
+					ps[j] = valtype(d[pos])
+					pos++
+				}
+				rc, err := uleb()
+				if err != nil {
+					return nil, err
+				}
+				rs := make([]string, rc)
+				for j := range rs {
+					rs[j] = valtype(d[pos])
+					pos++
+				}
+				types = append(types, strings.Join(ps, ",")+";"+strings.Join(rs, ","))
+			}
+		case 2: // import section
+			count, err := uleb()
 			if err != nil {
 				return nil, err
 			}
-			if pos >= len(d) {
-				return nil, errTruncated
+			for i := uint64(0); i < count; i++ {
+				mod, err := readName()
+				if err != nil {
+					return nil, err
+				}
+				nm, err := readName()
+				if err != nil {
+					return nil, err
+				}
+				if pos >= len(d) {
+					return nil, errTruncated
+				}
+				kind := d[pos]
+				pos++
+				switch kind {
+				case 0x00: // func: typeidx
+					ti, err := uleb()
+					if err != nil {
+						return nil, err
+					}
+					if int(ti) >= len(types) {
+						return nil, errBadWasm
+					}
+					pr := strings.SplitN(types[ti], ";", 2)
+					imports = append(imports, wasmImport{module: mod, name: nm, params: pr[0], results: pr[1]})
+				case 0x01: // table
+					pos++
+					if err := skipLimits(uleb); err != nil {
+						return nil, err
+					}
+				case 0x02: // mem
+					if err := skipLimits(uleb); err != nil {
+						return nil, err
+					}
+				case 0x03: // global
+					pos += 2
+				default:
+					return nil, errBadWasm
+				}
 			}
-			kind := d[pos]
-			pos++
-			// Skip the import descriptor by kind.
-			switch kind {
-			case 0x00: // func: typeidx
-				if _, err := uleb(); err != nil {
-					return nil, err
-				}
-			case 0x01: // table: reftype(1) + limits
-				pos++ // reftype
-				if err := skipLimits(uleb); err != nil {
-					return nil, err
-				}
-			case 0x02: // mem: limits
-				if err := skipLimits(uleb); err != nil {
-					return nil, err
-				}
-			case 0x03: // global: valtype(1) + mut(1)
-				pos += 2
-			default:
-				return nil, errBadWasm
-			}
-			imports = append(imports, wasmImport{mod, nm})
 		}
 		pos = end
 	}
@@ -183,15 +257,14 @@ func parseWasmImports(d []byte) ([]wasmImport, error) {
 
 // skipLimits consumes a wasm limits: flags(byte) + min(uleb) [+ max(uleb)].
 func skipLimits(uleb func() (uint64, error)) error {
-	// flags is the next byte, read via uleb (single-byte varint).
 	flags, err := uleb()
 	if err != nil {
 		return err
 	}
-	if _, err := uleb(); err != nil { // min
+	if _, err := uleb(); err != nil {
 		return err
 	}
-	if flags&0x01 != 0 { // has max
+	if flags&0x01 != 0 {
 		if _, err := uleb(); err != nil {
 			return err
 		}
