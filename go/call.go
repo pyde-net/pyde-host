@@ -89,16 +89,24 @@ func (c *CallBuilder) Exec() ([]byte, int32) {
 		rc = crossCall(ptr(c.target[:]), ptr(fnb), int32(len(fnb)),
 			ptr(c.calldata), int32(len(c.calldata)), ptr(val[:]), c.gas, ptr(out), ptrOf32(&outLen))
 	}
-	if rc != StatusOK {
-		return nil, rc
+	// The host always writes the actual length to outLen (0 for a non-revert
+	// failure). On a revert (ErrCrossCallFailed / an unknown negative) it also
+	// writes the callee's revert payload into out — return it so callers can
+	// surface the callee's message (mirrors Rust's CallError::Reverted(bytes)).
+	n := int(outLen)
+	if n < 0 {
+		n = 0
 	}
-	if int(outLen) > c.returnCap {
-		Revert("pyde: cross-call return data exceeds ReturnCap")
+	if rc == StatusOK {
+		if n > c.returnCap {
+			Revert("pyde: cross-call return data exceeds ReturnCap")
+		}
+		return out[:n], StatusOK
 	}
-	if outLen < 0 {
-		outLen = 0
+	if n > c.returnCap {
+		n = c.returnCap
 	}
-	return out[:outLen], StatusOK
+	return out[:n], rc
 }
 
 // ExecOrRevert performs the call, reverting on any non-OK status, and returns
@@ -106,6 +114,9 @@ func (c *CallBuilder) Exec() ([]byte, int32) {
 func (c *CallBuilder) ExecOrRevert() []byte {
 	ret, rc := c.Exec()
 	if rc != StatusOK {
+		if len(ret) > 0 {
+			Revert(string(ret)) // forward the callee's revert message verbatim
+		}
 		Revert("pyde: cross-call failed")
 	}
 	return ret
