@@ -145,3 +145,85 @@ func (u U128) SubChecked(other U128) (U128, bool) {
 	hi, borrow2 := bits.Sub64(u.Hi, other.Hi, borrow)
 	return U128{Lo: lo, Hi: hi}, borrow2 == 0
 }
+
+// Mul returns u*other, wrapping mod 2^128 (matching Rust's u128 wrapping_mul).
+// The a1*b1 term lands entirely at 2^128 and vanishes under the modulus.
+func (u U128) Mul(other U128) U128 {
+	hi, lo := bits.Mul64(u.Lo, other.Lo)
+	hi += u.Lo*other.Hi + u.Hi*other.Lo
+	return U128{Lo: lo, Hi: hi}
+}
+
+// MulChecked returns u*other and false if the product overflowed 128 bits.
+// It forms the full 256-bit product in four 64-bit limbs (r3:r2:r1:r0) and
+// reports overflow when either high limb is non-zero.
+func (u U128) MulChecked(other U128) (U128, bool) {
+	p00h, p00l := bits.Mul64(u.Lo, other.Lo)
+	p01h, p01l := bits.Mul64(u.Lo, other.Hi)
+	p10h, p10l := bits.Mul64(u.Hi, other.Lo)
+	p11h, p11l := bits.Mul64(u.Hi, other.Hi)
+
+	r0 := p00l
+	// r1 = p00h + p01l + p10l, capturing carries into r2.
+	r1, c1 := bits.Add64(p00h, p01l, 0)
+	r1, c2 := bits.Add64(r1, p10l, 0)
+	// r2 = p01h + p10h + p11l + (c1+c2), capturing carries into r3.
+	r2, c3 := bits.Add64(p01h, p10h, 0)
+	r2, c4 := bits.Add64(r2, p11l, 0)
+	r2, c5 := bits.Add64(r2, c1+c2, 0)
+	// r3 = p11h + (c3+c4+c5).
+	r3 := p11h + c3 + c4 + c5
+
+	return U128{Lo: r0, Hi: r1}, (r2 | r3) == 0
+}
+
+// shl1 returns u<<1.
+func (u U128) shl1() U128 {
+	return U128{Lo: u.Lo << 1, Hi: (u.Hi << 1) | (u.Lo >> 63)}
+}
+
+// bit returns bit i (0 = LSB, 127 = MSB) as 0 or 1.
+func (u U128) bit(i int) uint64 {
+	if i < 64 {
+		return (u.Lo >> uint(i)) & 1
+	}
+	return (u.Hi >> uint(i-64)) & 1
+}
+
+// DivMod returns (u/other, u%other), truncating toward zero. It panics on a
+// zero divisor (a divide-by-zero in a contract reverts the frame).
+func (u U128) DivMod(other U128) (U128, U128) {
+	if other.IsZero() {
+		panic("pyde: U128 division by zero")
+	}
+	if u.Cmp(other) < 0 {
+		return U128{}, u
+	}
+	// Fast path: a 64-bit divisor divides limb-by-limb via math/bits.
+	if other.Hi == 0 {
+		qHi, rem := bits.Div64(0, u.Hi, other.Lo)
+		qLo, rem2 := bits.Div64(rem, u.Lo, other.Lo)
+		return U128{Lo: qLo, Hi: qHi}, U128{Lo: rem2}
+	}
+	// General path: schoolbook binary long division, MSB to LSB.
+	var q, rem U128
+	for i := 127; i >= 0; i-- {
+		rem = rem.shl1()
+		rem.Lo |= u.bit(i)
+		if rem.Cmp(other) >= 0 {
+			rem = rem.Sub(other)
+			if i < 64 {
+				q.Lo |= uint64(1) << uint(i)
+			} else {
+				q.Hi |= uint64(1) << uint(i-64)
+			}
+		}
+	}
+	return q, rem
+}
+
+// Div returns u/other, truncating toward zero. Panics on a zero divisor.
+func (u U128) Div(other U128) U128 { q, _ := u.DivMod(other); return q }
+
+// Mod returns u%other. Panics on a zero divisor.
+func (u U128) Mod(other U128) U128 { _, r := u.DivMod(other); return r }
