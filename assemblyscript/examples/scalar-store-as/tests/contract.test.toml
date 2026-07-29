@@ -1,6 +1,6 @@
 # Behavior tests for scalar-store-as, run on the real WASM runtime via
 # `otigen test`. Proves the sstore_scalar → sload_scalar round-trip that
-# @pyde-net/sdk's acceptance criterion requires — no mock host.
+# @pyde-net/host's acceptance criterion requires — no mock host.
 
 [accounts]
 alice = {}

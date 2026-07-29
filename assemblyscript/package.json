@@ -1,7 +1,7 @@
 {
   "name": "@pyde-net/host",
-  "version": "0.1.0-alpha.9",
-  "description": "Canonical Pyde host-function declarations for AssemblyScript contracts. The complete pyde::* ABI a WASM contract can call into.",
+  "version": "0.1.0-alpha.10",
+  "description": "The AssemblyScript SDK for Pyde contracts: the full pyde::* host ABI plus pointer-free ergonomic wrappers — LE codecs, 128-bit math, borsh, ctx/calldata/exit/hash, and factory child-address helpers.",
   "author": "zarah <zarah@pyde.network>",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -13,7 +13,8 @@
     "wasm",
     "blockchain",
     "contract",
-    "assemblyscript"
+    "assemblyscript",
+    "borsh"
   ],
   "main": "assembly/index.ts",
   "types": "assembly/index.ts",
@@ -22,10 +23,14 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node tests/child.test.mjs"
+    "asbuild": "asc assembly/index.ts --outFile build/host.wasm --target release",
+    "test": "node tests/child.test.mjs && node tests/codec_parity.spec.mjs"
   },
   "peerDependencies": {
     "assemblyscript": ">=0.27.0"
+  },
+  "dependencies": {
+    "as-bignum": "^0.3.1"
   },
   "devDependencies": {
     "assemblyscript": "^0.27.0"

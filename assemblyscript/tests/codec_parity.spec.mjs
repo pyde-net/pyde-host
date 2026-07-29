@@ -1,4 +1,4 @@
-// Codec-parity conformance: proves @pyde-net/sdk's BorshEncoder/Decoder
+// Codec-parity conformance: proves @pyde-net/host's BorshEncoder/Decoder
 // are byte-identical to Rust `borsh::to_vec`, with NO mock host.
 //
 // Flow: compile tests/parity_entry.ts with the local asc, instantiate in
