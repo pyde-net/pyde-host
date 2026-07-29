@@ -101,7 +101,7 @@ extern int32_t sdelete_map3(const uint8_t* field_ptr, int32_t field_len, const u
 // ─────────────────────────────────────────────────────────────────────
 
 PYDE_HOST_FN(balance)
-extern int32_t balance(const uint8_t* addr_ptr, uint8_t* balance_out_ptr);
+extern void balance(const uint8_t* addr_ptr, uint8_t* balance_out_ptr);
 
 PYDE_HOST_FN(transfer)
 extern int32_t transfer(const uint8_t* to_ptr, const uint8_t* amount_ptr);
@@ -133,10 +133,10 @@ extern int64_t chain_id(void);
 // ─────────────────────────────────────────────────────────────────────
 
 PYDE_HOST_FN(tx_hash)
-extern int32_t tx_hash(uint8_t* hash_out_ptr);
+extern void tx_hash(uint8_t* hash_out_ptr);
 
 PYDE_HOST_FN(tx_value)
-extern int32_t tx_value(uint8_t* value_out_ptr);
+extern void tx_value(uint8_t* value_out_ptr);
 
 PYDE_HOST_FN(tx_gas_remaining)
 extern int64_t tx_gas_remaining(void);
@@ -241,7 +241,7 @@ extern void revert(const uint8_t* reason_ptr, int32_t reason_len);
 // ─────────────────────────────────────────────────────────────────────
 
 PYDE_HOST_FN(consume_gas)
-extern int32_t consume_gas(int64_t amount);
+extern void consume_gas(int64_t amount);
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.11 VRF beacon
