@@ -9,7 +9,7 @@
 // continue, making any code after a `writeReturn` / `revertStr` correctly
 // dead. (This is the idiom host_fns.ts documents for `revert`.)
 
-import { pyde_return, revert as h_revert } from "@pyde-net/host/assembly";
+import { pyde_return, revert as h_revert } from "./host_fns";
 
 // Set this call's return data and exit successfully. `data` is typically
 // the borsh encoding of the entry's declared outputs.

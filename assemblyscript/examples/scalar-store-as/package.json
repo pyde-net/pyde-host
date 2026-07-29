@@ -2,12 +2,12 @@
   "name": "scalar-store-as",
   "version": "0.1.0",
   "private": true,
-  "description": "Acceptance contract for @pyde-net/sdk — links only the SDK.",
+  "description": "Acceptance contract for @pyde-net/host — links only the SDK.",
   "scripts": {
     "build": "asc assembly/index.ts --config asconfig.json --target release"
   },
   "dependencies": {
-    "@pyde-net/sdk": "file:../.."
+    "@pyde-net/host": "file:../.."
   },
   "devDependencies": {
     "assemblyscript": "^0.27.0"

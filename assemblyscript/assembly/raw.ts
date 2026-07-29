@@ -13,9 +13,9 @@
 // the raw `caller(out_ptr) -> i32` vs the wrapper `ctx.caller() ->
 // Address`:
 //
-//   import { sstore_scalar, sload_scalar } from "@pyde-net/sdk/assembly/raw";
+//   import { sstore_scalar, sload_scalar } from "@pyde-net/host/assembly/raw";
 //
 // Pointer convention is the raw ABI's: every `usize` is a byte offset in
 // linear memory; get one with `changetype<usize>(staticArray)`.
 
-export * from "@pyde-net/host/assembly";
+export * from "./host_fns";

@@ -23,11 +23,11 @@
 // turns into a `pyde::revert` carrying the message, so the transaction
 // reverts cleanly with a readable reason instead of trapping opaquely.
 //
-// A downstream contract linking @pyde-net/sdk sets the same `use` line
+// A downstream contract linking @pyde-net/host sets the same `use` line
 // (otigen wires this into the contract's asconfig); the SDK owns the
 // implementation so every contract gets identical, correct behavior.
 
-import { revert } from "@pyde-net/host/assembly";
+import { revert } from "./host_fns";
 
 // Signature dictated by the AssemblyScript abort ABI: the message and
 // source-file references are `string | null`, the position is `u32`.

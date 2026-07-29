@@ -1,5 +1,5 @@
-// scalar-store-as — the live acceptance contract for @pyde-net/sdk
-// (issue #9, criterion 3). It links ONLY @pyde-net/sdk and proves the
+// scalar-store-as — the live acceptance contract for @pyde-net/host
+// (issue #9, criterion 3). It links ONLY @pyde-net/host and proves the
 // runtime foundation works end-to-end on the real engine:
 //
 //   • borsh decode of the entry argument   (BorshDecoder)
@@ -10,9 +10,9 @@
 // `set(value)` writes; `get()` reads the exact value back — the round-trip
 // the acceptance criterion requires.
 
-import { BorshEncoder, BorshDecoder, read, writeReturn } from "@pyde-net/sdk/assembly";
-import { sstore_scalar, sload_scalar } from "@pyde-net/sdk/assembly/raw";
-import { abort as sdkAbort } from "@pyde-net/sdk/assembly/abort";
+import { BorshEncoder, BorshDecoder, read, writeReturn } from "@pyde-net/host/assembly";
+import { sstore_scalar, sload_scalar } from "@pyde-net/host/assembly/raw";
+import { abort as sdkAbort } from "@pyde-net/host/assembly/abort";
 
 // Local, non-exported abort shim so asconfig's
 // `use: ["abort=assembly/index/abort"]` resolves to the SDK's handler

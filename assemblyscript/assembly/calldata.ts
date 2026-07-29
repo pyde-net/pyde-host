@@ -8,7 +8,7 @@
 // overwrites with the actual bytes copied. We size the buffer to the
 // probed calldata length and pass that as the limit, so no truncation.
 
-import { calldata_size, calldata_copy } from "@pyde-net/host/assembly";
+import { calldata_size, calldata_copy } from "./host_fns";
 import { writeU32LE } from "./codec";
 
 // Byte length of the current invocation's calldata.

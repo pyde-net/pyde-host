@@ -3,7 +3,7 @@
 // (rust/pyde-host/src/lib.rs L818): allocate the 32-byte output, call the
 // host fn with (in_ptr, in_len, out_ptr), return the digest.
 
-import { hash_blake3, hash_poseidon2, hash_keccak256 } from "@pyde-net/host/assembly";
+import { hash_blake3, hash_poseidon2, hash_keccak256 } from "./host_fns";
 import { Bytes32, newBytes32 } from "./types";
 
 // Blake3 — general-purpose hashing (address derivation, event topic-0,

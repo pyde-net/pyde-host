@@ -31,7 +31,7 @@ import { readU64LE, writeU64LE, readI64LE, writeI64LE } from "./codec";
 
 // Re-export the value types so contracts get the arithmetic operators
 // (+, -, *, /, ==, <, <=, >, >=, ...) without importing as-bignum
-// directly. `import { u128 } from "@pyde-net/sdk"` is the intended path.
+// directly. `import { u128 } from "@pyde-net/host"` is the intended path.
 export { u128, i128 };
 
 // Byte width of a u128 / i128 on the wire (spec §3.2).

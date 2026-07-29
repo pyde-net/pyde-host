@@ -20,7 +20,7 @@ import {
   wave_timestamp as h_wave_timestamp,
   chain_id as h_chain_id,
   beacon_get as h_beacon_get,
-} from "@pyde-net/host/assembly";
+} from "./host_fns";
 
 import { Address, Bytes32, newAddress, newBytes32 } from "./types";
 import { u128, readU128LE, U128_LEN } from "./u128";

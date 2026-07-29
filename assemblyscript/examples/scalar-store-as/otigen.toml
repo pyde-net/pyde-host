@@ -1,10 +1,10 @@
-# scalar-store-as — acceptance contract manifest for @pyde-net/sdk.
+# scalar-store-as — acceptance contract manifest for @pyde-net/host.
 # See https://book.pyde.network/companion/OTIGEN_BINARY_SPEC
 
 [contract]
 name        = "scalar-store-as"
 version     = "0.1.0"
-description = "Acceptance contract for @pyde-net/sdk (issue #9): sstore_scalar + sload_scalar round-trip."
+description = "Acceptance contract for @pyde-net/host (issue #9): sstore_scalar + sload_scalar round-trip."
 type        = "contract"
 
 [contract.lang]
