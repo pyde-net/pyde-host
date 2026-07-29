@@ -1,0 +1,128 @@
+// Codec-parity conformance: proves @pyde-net/sdk's BorshEncoder/Decoder
+// are byte-identical to Rust `borsh::to_vec`, with NO mock host.
+//
+// Flow: compile tests/parity_entry.ts with the local asc, instantiate in
+// Node, then for every vector in vectors/codec_borsh.json:
+//   1. ENCODE   — marshal the golden `input` into the wasm, encode, and
+//                 assert the bytes equal the golden `borsh`.
+//   2. REENCODE — feed the golden `borsh` bytes back through the decoder
+//                 + encoder, assert the round-trip reproduces `borsh` and
+//                 consumes every byte.
+// The goldens live in vectors/codec_borsh.json (canonical borsh, validated
+// byte-for-byte against the Rust `borsh` crate). This file never fabricates
+// expected bytes.
+
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const pkgDir = fileURLToPath(new URL("..", import.meta.url));
+const vectorsPath = fileURLToPath(new URL("../../vectors/codec_borsh.json", import.meta.url));
+
+const golden = JSON.parse(readFileSync(vectorsPath, "utf8"));
+const vectors = golden.vectors;
+assert.ok(Array.isArray(vectors) && vectors.length > 0, "golden vectors empty");
+
+// ── compile parity_entry.ts ─────────────────────────────────────────────
+const tmp = mkdtempSync(join(tmpdir(), "pyde-sdk-parity-"));
+const wasmPath = join(tmp, "parity.wasm");
+let failures = 0;
+try {
+  execFileSync(
+    "npx",
+    ["asc", "tests/parity_entry.ts", "--outFile", wasmPath, "--target", "release"],
+    { cwd: pkgDir, stdio: "inherit" },
+  );
+
+  const bytes = readFileSync(wasmPath);
+  // parity_entry uses assert() (→ env.abort). It's a TEST entry, not a
+  // deployed contract, so a throwing stub is fine here; slice 5 removes
+  // the env.abort import from the shipped SDK surface entirely.
+  const env = {
+    abort: (_msg, _file, line, col) => {
+      throw new Error(`wasm abort at ${line}:${col}`);
+    },
+  };
+  const instance = await WebAssembly.instantiate(new WebAssembly.Module(bytes), { env });
+  const ex = instance.exports;
+
+  const memU8 = () => new Uint8Array(ex.memory.buffer);
+  const outHex = () => Buffer.from(memU8().subarray(ex.outPtr(), ex.outPtr() + ex.outLen())).toString("hex");
+  const unhex = (h) => Uint8Array.from(Buffer.from(h, "hex"));
+  const MASK64 = (1n << 64n) - 1n;
+  const i64bits = (v) => BigInt.asIntN(64, v); // exact bit pattern for a wasm i64 param
+  const split128 = (u) => {
+    const bits = u < 0n ? u + (1n << 128n) : u; // two's-complement for negatives
+    return { lo: i64bits(bits & MASK64), hi: i64bits(bits >> 64n) };
+  };
+  const writeIn = (u8) => { memU8().set(u8, ex.inPtr()); };
+  const writeType = (ty) => {
+    const b = Buffer.from(ty, "utf8");
+    memU8().set(b, ex.typePtr());
+    return b.length;
+  };
+
+  // Drive the ENCODE path for one vector, returning the produced hex.
+  const encode = (v) => {
+    switch (v.ty ?? v.type) {
+      case "u8": ex.encU8(Number(BigInt(v.input))); break;
+      case "u16": ex.encU16(Number(BigInt(v.input))); break;
+      case "u32": ex.encU32(Number(BigInt(v.input))); break;
+      case "u64": ex.encU64(i64bits(BigInt(v.input))); break;
+      case "i8": ex.encI8(Number(BigInt(v.input))); break;
+      case "i16": ex.encI16(Number(BigInt(v.input))); break;
+      case "i32": ex.encI32(Number(BigInt(v.input))); break;
+      case "i64": ex.encI64(BigInt(v.input)); break;
+      case "u128": { const { lo, hi } = split128(BigInt(v.input)); ex.encU128(lo, hi); break; }
+      case "i128": { const { lo, hi } = split128(BigInt(v.input)); ex.encI128(lo, hi); break; }
+      case "bool": ex.encBool(v.input ? 1 : 0); break;
+      case "address": writeIn(unhex(v.input)); ex.encAddress(); break;
+      case "hash32": writeIn(unhex(v.input)); ex.encHash32(); break;
+      case "bytes": { const b = unhex(v.input); writeIn(b); ex.encBytes(b.length); break; }
+      case "string": { const b = Buffer.from(v.input, "utf8"); writeIn(b); ex.encString(b.length); break; }
+      case "vec_u64": {
+        const els = v.input; const buf = Buffer.alloc(els.length * 8);
+        els.forEach((e, i) => buf.writeBigUInt64LE(BigInt(e), i * 8));
+        writeIn(buf); ex.encVecU64(els.length); break;
+      }
+      default: throw new Error(`unknown type ${v.type}`);
+    }
+    return outHex();
+  };
+
+  for (const v of vectors) {
+    const ty = v.type;
+    // 1. encode parity
+    const enc = encode(v);
+    if (enc !== v.borsh) {
+      failures++;
+      console.log(`FAIL encode   ${v.name.padEnd(22)} got=${enc} want=${v.borsh}`);
+      continue;
+    }
+    // 2. decode → re-encode round-trip against the same golden bytes
+    const data = unhex(v.borsh);
+    writeIn(data);
+    const typeLen = writeType(ty);
+    const remaining = ex.reencodeByType(typeLen, data.length);
+    const re = outHex();
+    if (re !== v.borsh || remaining !== 0) {
+      failures++;
+      console.log(`FAIL reencode ${v.name.padEnd(22)} got=${re} remaining=${remaining} want=${v.borsh}`);
+      continue;
+    }
+  }
+
+  const total = vectors.length;
+  if (failures === 0) {
+    console.log(`\n✓ codec parity: ${total} vectors × 2 directions (encode + reencode) — byte-identical to Rust borsh`);
+  } else {
+    console.log(`\n✗ codec parity: ${failures} failure(s) across ${total} vectors`);
+  }
+} finally {
+  rmSync(tmp, { recursive: true, force: true });
+}
+
+process.exit(failures === 0 ? 0 : 1);

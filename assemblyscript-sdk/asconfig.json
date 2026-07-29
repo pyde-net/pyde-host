@@ -1,0 +1,6 @@
+{
+  "options": {
+    "runtime": "stub",
+    "bindings": "raw"
+  }
+}

@@ -1,0 +1,52 @@
+# Behavior tests for scalar-store-as, run on the real WASM runtime via
+# `otigen test`. Proves the sstore_scalar → sload_scalar round-trip that
+# @pyde-net/sdk's acceptance criterion requires — no mock host.
+
+[accounts]
+alice = {}
+
+[cheats]
+now      = 1_700_000_000
+chain_id = 31337
+
+# ── Test 1: unset storage reads back zero ─────────────────────────────
+[[tests]]
+name = "get_returns_zero_initially"
+
+[[tests.calls]]
+function = "get"
+expect.return_value = "0"
+
+# ── Test 2: set(42) then get() reads the exact value written ──────────
+[[tests]]
+name = "set_then_get_roundtrips"
+
+[[tests.calls]]
+function = "set"
+from     = "alice"
+args     = ["42"]
+
+[[tests.calls]]
+function = "get"
+expect.return_value = "42"
+
+[tests.expect]
+storage.value = "42"
+
+# ── Test 3: overwrite replaces the value ──────────────────────────────
+[[tests]]
+name = "set_overwrites_previous"
+
+[[tests.calls]]
+function = "set"
+from     = "alice"
+args     = ["7"]
+
+[[tests.calls]]
+function = "set"
+from     = "alice"
+args     = ["100"]
+
+[[tests.calls]]
+function = "get"
+expect.return_value = "100"
