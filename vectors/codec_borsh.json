@@ -1,9 +1,9 @@
 {
   "_meta": {
+    "description": "Golden borsh-encoding vectors for @pyde-net/sdk codec parity. The AssemblyScript SDK must reproduce every `borsh` field byte-for-byte.",
     "borsh_rules": "ints = fixed-width LE two's-complement; bool = 1 byte 0/1; address/hash32 = 32 raw bytes (no prefix); bytes/string = u32_le(len) + payload; vec<T> = u32_le(len) + fixed-stride elements.",
-    "description": "Golden borsh-encoding vectors for @pyde-net/sdk codec parity. Every value is encoded by the reference `borsh::to_vec`; the AssemblyScript SDK must reproduce every `borsh` field byte-for-byte.",
-    "generator": "cargo test -p pyde-host --test codec_borsh_goldens regenerate -- --ignored",
-    "input_encoding": "decimal string (ints), JSON bool, hex string (address/hash32/bytes), raw string (string), array of decimal strings (vec_u64)."
+    "input_encoding": "decimal string (ints), JSON bool, hex string (address/hash32/bytes), raw string (string), array of decimal strings (vec_u64).",
+    "provenance": "Canonical borsh; every `borsh` field validated byte-for-byte against the Rust `borsh` crate. Hand-maintained — keep in sync with assemblyscript-sdk/assembly/borsh.ts."
   },
   "vectors": [
     {
