@@ -101,7 +101,7 @@ export declare function sdelete_map3(field_ptr: usize, field_len: i32, k1_ptr: u
 // ─────────────────────────────────────────────────────────────────────
 
 @external("pyde", "balance")
-export declare function balance(addr_ptr: usize, balance_out_ptr: usize): i32;
+export declare function balance(addr_ptr: usize, balance_out_ptr: usize): void;
 
 @external("pyde", "transfer")
 export declare function transfer(to_ptr: usize, amount_ptr: usize): i32;
@@ -254,7 +254,7 @@ export declare function revert(reason_ptr: usize, reason_len: i32): void;
 // ─────────────────────────────────────────────────────────────────────
 
 @external("pyde", "consume_gas")
-export declare function consume_gas(amount: i64): i32;
+export declare function consume_gas(amount: i64): void;
 
 // ─────────────────────────────────────────────────────────────────────
 // §7.11 VRF beacon

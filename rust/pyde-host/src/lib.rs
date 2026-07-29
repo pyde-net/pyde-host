@@ -345,7 +345,7 @@ pub mod raw {
         /// `addr_ptr`: pointer to a 32-byte address.
         /// `balance_out_ptr`: pointer to a 16-byte buffer (u128 LE).
         /// gas: 100 base.
-        pub fn balance(addr_ptr: *const u8, balance_out_ptr: *mut u8) -> i32;
+        pub fn balance(addr_ptr: *const u8, balance_out_ptr: *mut u8);
 
         /// Transfer native PYDE to another account from this contract's
         /// balance.
@@ -591,7 +591,7 @@ pub mod raw {
         /// external data) and want the cost visible in receipts.
         ///
         /// gas: 2 base + `amount`.
-        pub fn consume_gas(amount: i64) -> i32;
+        pub fn consume_gas(amount: i64);
 
         // ─────────────────────────────────────────────────────────────────
         // §7.11 VRF beacon
@@ -916,7 +916,7 @@ pub fn return_(data: &[u8]) -> ! {
 /// off-fuel computation cost (synchronous loops bounded by
 /// external data) in receipts.
 #[inline]
-pub fn consume_gas(amount: u64) -> i32 {
+pub fn consume_gas(amount: u64) {
     unsafe { crate::raw::consume_gas(amount as i64) }
 }
 
