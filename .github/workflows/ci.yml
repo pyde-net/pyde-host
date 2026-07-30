@@ -62,14 +62,18 @@ jobs:
       - uses: acifani/setup-tinygo@v2
         with:
           tinygo-version: 'latest'
-      # Child-address conformance: the pure `child` subpackage (no
-      # wasmimport, so host `go test` works) replays the shared
-      # golden vectors — preimage assembly + unordered-pair sort.
-      - name: conformance vectors
+      # Gate the WHOLE module, not just ./child. The root package's host
+      # functions are `//go:wasmimport`, but its tests run host-side and the
+      # import-purity test shells out to the tinygo installed above — so the
+      # full suite (borsh conformance + parity, u128 arith, import purity,
+      # child-address vectors) belongs in CI. Testing only ./child is how a
+      # root-package regression (a stale codegen-seam probe) shipped once.
+      - name: fmt + vet + test (full module)
         working-directory: go
         run: |
-          go vet ./child
-          go test ./child -v
+          test -z "$(gofmt -l .)" || { echo "::error::gofmt drift:"; gofmt -l .; exit 1; }
+          go vet ./...
+          go test ./... -v
       # TinyGo needs a main entry point; the pyde-host go package is
       # library-only. Build a tiny smoke program in a temp dir that
       # imports the library via a `replace` directive.

@@ -59,7 +59,7 @@ func probe() {
 	_ = pyde.DelegateCall(to, "impl").Args(nil).ExecOrRevert()
 
 	// factory
-	child, _ := pyde.New(to).Salt(digest).Args(nil).Instantiate()
+	child, _, _ := pyde.New(to).Salt(digest).Args(nil).Instantiate()
 
 	// return
 	pyde.ReturnAddress(child)
