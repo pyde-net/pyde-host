@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "module": "node16",
+    "moduleResolution": "node16",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "declaration": true,
+    // Guard rail, not a bundler concession: this makes tsc REFUSE to inline a
+    // `const enum` imported from `assemblyscript` instead of quietly baking
+    // one compiler version's numeric node ids into the shipped JavaScript.
+    "isolatedModules": true,
+    "rootDir": ".",
+    "outDir": "dist",
+    "newLine": "lf",
+    // `assemblyscript`'s generated .d.ts is half a megabyte of compiler
+    // internals; type-check our own code against it, not it against itself.
+    "skipLibCheck": true
+  },
+  "include": ["index.ts", "reconcile.ts", "tests/**/*.ts"]
+}

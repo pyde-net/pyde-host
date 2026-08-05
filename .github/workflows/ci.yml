@@ -46,9 +46,21 @@ jobs:
       - name: compile
         run: npx asc assembly/index.ts --outFile /tmp/host-check.wasm --target release
       # Child-address conformance: preimage assembly + unordered-pair
-      # sort replayed against the shared golden vectors.
+      # sort replayed against the shared golden vectors. Also builds and
+      # tests the `/transform` intent plugin against the locked `asc`.
       - name: conformance vectors
         run: npm test
+      # The plugin is compiled ONCE and then loaded by whatever `asc` the
+      # contract project installs — commonly a newer minor than the one
+      # locked here (scaffolds pin ^0.28). Re-run its suite against the far
+      # end of the supported range so a build-time coupling to one
+      # compiler's internals (an inlined `const enum` node id, a class
+      # identity that only holds within a single install) fails HERE
+      # instead of silently waving every intent mismatch through.
+      - name: transform — supported asc range
+        run: |
+          npm install --no-save --ignore-scripts assemblyscript@0.28.20
+          npm run test:transform
 
   go:
     runs-on: ubuntu-latest

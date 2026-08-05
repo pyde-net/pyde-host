@@ -7,6 +7,11 @@ math, borsh, `ctx` / `calldata` / `exit` / `hash`, and the factory
 child-address helpers. Every extern is annotated with its section in
 [`HOST_FN_ABI_SPEC.md`](../HOST_FN_ABI_SPEC.md) and its gas cost.
 
+The package also ships an optional `asc` compiler plugin on the
+`/transform` subpath — the `@view` / `@mutating` / `@payable` markers
+described [below](#function-intent-view--mutating--payable). It is
+build-time only: no part of it reaches your wasm.
+
 ## Install
 
 Via npm:
@@ -164,6 +169,93 @@ adding `contract.ts` is the one-file opt-in, deleting it the opt-out.
 
 Commit `pyde.generated.ts` (like a `.pb.go`): it keeps diffs honest and
 lets editors resolve the exports without a build step.
+
+## Function intent: `@view` / `@mutating` / `@payable`
+
+The generated shim tells you what an entry point *takes*. Nothing in
+`contract.ts` tells you what it *does* — whether it writes state, whether
+it accepts value. That lives in `otigen.toml`, a file away from the code
+it describes.
+
+The optional `@pyde-net/host/transform` plugin closes that gap. Mark the
+intent where the logic is:
+
+```ts
+// assembly/contract.ts
+@view
+export function __get_impl(): u64 {
+  return storage.counter.read();
+}
+
+@mutating
+export function __increment_impl(): u64 { … }
+
+@payable
+export function __deposit_impl(): void { … }
+```
+
+Enable it in `asconfig.json`:
+
+```json
+{
+  "options": {
+    "transform": ["@pyde-net/host/transform"]
+  }
+}
+```
+
+The markers are **checked, never merged**. `[functions.*]` remains the
+one source of truth for the ABI; the transform reads the markers, holds
+them up against the manifest, and fails the build when they disagree:
+
+```
+FAILURE IntentMismatch: function intent in AssemblyScript disagrees with otigen.toml
+
+  1. assembly/contract.ts:70 — `__increment_impl` (function `increment`)
+       source      : @view — declares this entry never writes state
+       otigen.toml : /w/otigen.toml:61: attributes = ["entry"] — no "view", so the ABI marks it mutating
+       fix         : drop @view, or add "view" to [functions.increment].attributes
+```
+
+### The rules
+
+Annotation is opt-in **per function**. A function with no markers is not
+checked, which is why adding the plugin to an existing contract can't
+break it.
+
+| Marker | Required in `[functions.<name>].attributes` | If the attribute is there but the marker isn't |
+|---|---|---|
+| `@view` | `view` | not an error — silence claims nothing |
+| `@mutating` | no `view` | not an error |
+| `@payable` | `payable` | **error** |
+| `@entry` | `entry` | not an error |
+
+`@payable` is the one symmetric rule. On an annotated function, saying
+nothing about value reads as "this entry refuses value" — a safety claim
+the manifest may not be making, so the transform makes you state it.
+`@view` and `@mutating` on the same function is always an error, as is a
+marker naming a function `[functions.*]` never declares.
+
+The marker sits on the `__<fn>_impl` body; the transform maps that name
+back to its manifest key. Contracts that export their own `() -> ()`
+entries can mark those directly.
+
+### Supported `asc` versions, and what happens outside them
+
+The plugin is written against **`asc` >= 0.27.30, < 0.29.0** and checks
+the compiler's actual version at the start of each build. Outside that
+range it prints a warning and stands down rather than reading an AST it
+can't vouch for.
+
+That degradation is safe by construction, and it is worth being precise
+about why: **an `asc` bump can at worst cost you the sugar, never the
+substrate.** Nothing downstream reads these markers. The entry surface,
+the borsh codecs, and the `pyde.abi` view/payable flags all come from
+`otigen.toml` via `otigen build`, which runs before `asc` does. Delete
+the `transform` line from `asconfig.json` and your annotated contract
+still compiles to the *same bytes* and deploys the same way — you lose
+only the cross-check. The package's test suite asserts exactly that,
+byte-for-byte.
 
 ## Pointer convention
 

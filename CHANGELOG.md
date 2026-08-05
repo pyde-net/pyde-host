@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project's versioning tracks the `HOST_FN_ABI_SPEC` version — see
 [`README.md`](./README.md#versioning) for the exact policy.
 
+## [Unreleased]
+
+### Added
+- **`@pyde-net/host/transform` — function-intent markers for
+  AssemblyScript.** An optional `asc` plugin, wired through
+  `asconfig.json`'s `options.transform`, that reads `@view` /
+  `@mutating` / `@payable` / `@entry` off the `__<fn>_impl` bodies and
+  cross-checks them against `[functions.*]` in `otigen.toml`. A
+  disagreement fails the build with an error citing both the marker and
+  the manifest line; agreement changes nothing.
+  - The manifest stays authoritative. The plugin injects no schema,
+    reads no `[state]` / `[events]`, and never feeds anything back into
+    the compile — annotating a contract produces byte-identical wasm,
+    and removing the plugin from `asconfig.json` still yields the same
+    deployable contract from the generated substrate. Both properties
+    are asserted byte-for-byte in the test suite.
+  - Supported range `asc >= 0.27.30, < 0.29.0`; outside it the plugin
+    warns and stands down rather than reading an AST it can't vouch
+    for, so a compiler bump can cost the sugar but never the substrate.
+
 ## [0.1.0-alpha.9] — 2026-07-22
 
 The factory release: `pyde::instantiate` across the whole
