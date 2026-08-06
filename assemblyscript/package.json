@@ -41,14 +41,14 @@
     "test": "node tests/child.test.mjs && node tests/codec_parity.spec.mjs && npm run test:transform"
   },
   "peerDependencies": {
-    "assemblyscript": ">=0.27.0"
+    "assemblyscript": ">=0.27.30 <0.29.0"
   },
   "dependencies": {
     "as-bignum": "^0.3.1"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",
-    "assemblyscript": "^0.27.0",
+    "assemblyscript": "^0.27.30",
     "typescript": "^5.9.0"
   }
 }
