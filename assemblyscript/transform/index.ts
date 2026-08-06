@@ -40,6 +40,7 @@ import {
   assertIntentMatchesManifest,
   findManifest,
   functionNameFor,
+  INTENT_MARKERS,
   isIntentMarker,
   loadManifest,
   IntentMismatchError,
@@ -155,13 +156,52 @@ function decoratorName(node: DecoratorLike): string | null {
   return typeof text === "string" ? text : null;
 }
 
+// Optimal string alignment distance (Levenshtein plus adjacent
+// transposition) between two short strings. Used only to catch a typo'd
+// marker; the operands are marker names, so the full table is negligible.
+function osaDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const d: number[][] = [];
+  for (let i = 0; i <= m; i++) {
+    d[i] = new Array<number>(n + 1).fill(0);
+    d[i][0] = i;
+  }
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+  }
+  return d[m][n];
+}
+
+// The intent marker within one edit (transposition included, so `@veiw` is
+// caught) of `name`, or null. This is the guard on the feature's whole
+// promise: without it a typo'd marker is silently left on the AST and the
+// function it was meant to constrain compiles unchecked.
+function nearestMarker(name: string): IntentMarker | null {
+  for (const marker of INTENT_MARKERS) {
+    if (osaDistance(name, marker) <= 1) return marker;
+  }
+  return null;
+}
+
 /**
  * Split a declaration's decorators into the intent markers we own and
  * everything else, and reject the shapes that are almost certainly a mistake.
+ *
+ * `warn`, when given, fires for a decorator that is not a marker but is one
+ * edit away from one — the near-miss a silent no-op would otherwise hide.
  */
 function partitionDecorators(
   node: DecoratedNode,
   source: Source,
+  warn?: (message: string) => void,
 ): { markers: IntentMarker[]; keep: DecoratorLike[] } {
   const markers: IntentMarker[] = [];
   const keep: DecoratorLike[] = [];
@@ -169,6 +209,17 @@ function partitionDecorators(
   for (const dec of node.decorators ?? []) {
     const name = decoratorName(dec);
     if (name === null || !isIntentMarker(name)) {
+      if (warn && name !== null) {
+        const near = nearestMarker(name);
+        if (near !== null) {
+          warn(
+            `\`@${name}\` on \`${node.name?.text ?? "?"}\` ` +
+              `(${source.normalizedPath}:${source.lineAt(dec.range.start)}) ` +
+              `is not an intent marker and is being left UNCHECKED — did you mean ` +
+              `\`@${near}\`? The markers are @${INTENT_MARKERS.join(", @")}.`,
+          );
+        }
+      }
       keep.push(dec);
       continue;
     }
@@ -220,11 +271,14 @@ function* decoratedDeclarations(nodes: readonly unknown[]): Generator<DecoratedN
  * contract — and the promise this package makes is that annotating a function
  * changes nothing about the wasm it compiles to.
  */
-export function collectIntents(source: Source): DeclaredIntent[] {
+export function collectIntents(
+  source: Source,
+  warn?: (message: string) => void,
+): DeclaredIntent[] {
   const intents: DeclaredIntent[] = [];
 
   for (const decl of decoratedDeclarations(source.statements)) {
-    const { markers, keep } = partitionDecorators(decl, source);
+    const { markers, keep } = partitionDecorators(decl, source, warn);
     if (markers.length === 0) continue;
 
     decl.decorators = keep.length > 0 ? keep : null;
@@ -271,7 +325,7 @@ export default class PydeIntentTransform extends Transform {
     const intents: DeclaredIntent[] = [];
     for (const source of parser.sources) {
       if (!isUserSource(source)) continue;
-      intents.push(...collectIntents(source));
+      intents.push(...collectIntents(source, (m) => this.warn(m)));
     }
 
     // No annotations, no manifest read, no cost. This is the path every

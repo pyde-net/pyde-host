@@ -342,6 +342,44 @@ describe("collectIntents", () => {
       "@inline is asc's, not ours",
     );
   });
+
+  test("warns on a near-miss marker instead of silently ignoring the typo", () => {
+    const decorator = (name: string, start: number) => ({
+      name: { text: name },
+      args: null,
+      range: { start },
+    });
+    const source = {
+      normalizedPath: "assembly/contract.ts",
+      isLibrary: false,
+      lineAt: (pos: number) => pos,
+      statements: [
+        {
+          name: { text: "__get_impl" },
+          decorators: [decorator("veiw", 12)], // transposed @view
+          range: { start: 12 },
+        },
+      ],
+    } as unknown as Source;
+
+    const warnings: string[] = [];
+    const intents = collectIntents(source, (m) => warnings.push(m));
+
+    // `@veiw` is not a marker, so nothing is collected or checked...
+    assert.deepEqual(intents, []);
+    // ...but the author is told, so the typo doesn't pass as "unannotated".
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0]!, /@veiw/);
+    assert.match(warnings[0]!, /did you mean `@view`/);
+  });
+
+  test("does not warn on real markers or asc's own decorators", () => {
+    // fakeSource carries @view (a marker), @payable (a marker), and @inline
+    // (asc's) — none should trip the near-miss warning.
+    const warnings: string[] = [];
+    collectIntents(fakeSource(), (m) => warnings.push(m));
+    assert.deepEqual(warnings, []);
+  });
 });
 
 describe("asc version gate", () => {
