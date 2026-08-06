@@ -15,7 +15,7 @@ signatures, the same gas costs, and the same error codes on-chain.
 | Path                     | Contents                                                                 |
 | ------------------------ | ------------------------------------------------------------------------ |
 | `rust/`                  | The `pyde-host` crate plus `pyde-entry-macros`, `pyde-storage-macros`, and `pyde-events-macros`. |
-| `assemblyscript/`        | The `@pyde-net/host` npm package: typed `.ts` declarations for every host fn. |
+| `assemblyscript/`        | The `@pyde-net/host` npm package: typed `.ts` declarations for every host fn, plus the optional `/transform` `asc` plugin that checks `@view`/`@mutating`/`@payable` against `otigen.toml`. |
 | `go/`                    | The `github.com/pyde-net/pyde-host/go` module for TinyGo contracts.      |
 | `c/`                     | `c/include/pyde/host.h` — a single-header C binding, plus a minimal example. |
 | `scripts/`               | Parity-check tooling that reads the spec and diffs it against each binding set. |

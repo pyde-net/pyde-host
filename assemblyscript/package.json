@@ -18,13 +18,27 @@
   ],
   "main": "assembly/index.ts",
   "types": "assembly/index.ts",
+  "type": "module",
+  "exports": {
+    ".": "./assembly/index.ts",
+    "./transform": {
+      "types": "./transform/dist/index.d.ts",
+      "default": "./transform/dist/index.js"
+    },
+    "./*": "./*"
+  },
   "files": [
     "assembly/",
+    "transform/dist/*.js",
+    "transform/dist/*.d.ts",
     "README.md"
   ],
   "scripts": {
     "asbuild": "asc assembly/index.ts --outFile build/host.wasm --target release",
-    "test": "node tests/child.test.mjs && node tests/codec_parity.spec.mjs"
+    "build:transform": "tsc -p transform/tsconfig.json",
+    "prepare": "npm run build:transform",
+    "test:transform": "npm run build:transform && node --test transform/dist/tests/*.spec.js",
+    "test": "node tests/child.test.mjs && node tests/codec_parity.spec.mjs && npm run test:transform"
   },
   "peerDependencies": {
     "assemblyscript": ">=0.27.0"
@@ -33,6 +47,8 @@
     "as-bignum": "^0.3.1"
   },
   "devDependencies": {
-    "assemblyscript": "^0.27.0"
+    "@types/node": "^20.19.0",
+    "assemblyscript": "^0.27.0",
+    "typescript": "^5.9.0"
   }
 }
