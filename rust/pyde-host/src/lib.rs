@@ -23,7 +23,7 @@
 //! #[no_mangle]
 //! pub extern "C" fn ping() {
 //!     let bytes = b"pong";
-//!     unsafe { pyde_host::pyde_return(bytes.as_ptr(), bytes.len() as i32) }
+//!     unsafe { pyde_host::raw::pyde_return(bytes.as_ptr(), bytes.len() as i32) }
 //! }
 //! ```
 
