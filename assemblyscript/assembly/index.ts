@@ -28,5 +28,9 @@ export * from "./calldata";
 export * from "./exit";
 export * from "./hash";
 
+// ── ABI status codes + cross-contract calls ─────────────────────────────
+export * from "./status";
+export * from "./call";
+
 // ── factory child-address helpers ───────────────────────────────────────
 export * from "./child";
