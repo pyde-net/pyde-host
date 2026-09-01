@@ -60,11 +60,17 @@ async function instantiate({
     throw new Error(`unexpected host fn: ${name}`);
   };
 
+  // Snapshot what the host actually received, so a test can prove the
+  // arguments survived encoding and the pointer/length plumbing.
+  const grab = (ptr, len) => new Uint8Array(mem.buffer, ptr, len).slice();
+
   const pyde = {
-    cross_call: (_t, _f, _fl, _c, _cl, valuePtr, gas, outPtr, outLenPtr) => {
+    cross_call: (_t, fnPtr, fnLen, cdPtr, cdLen, valuePtr, gas, outPtr, outLenPtr) => {
       capture.kind = "call";
       capture.gas = gas;
       capture.valuePtr = valuePtr;
+      capture.fn = new TextDecoder().decode(grab(fnPtr, fnLen));
+      capture.calldata = grab(cdPtr, cdLen);
       return writeOut(outPtr, outLenPtr);
     },
     cross_call_static: (_t, _f, _fl, _c, _cl, gas, outPtr, outLenPtr) => {
@@ -179,6 +185,29 @@ test("the default gas budget forwards everything remaining", async () => {
   // 1 << 62 — far above any real budget, so the engine's
   // min(gas, remaining) forwards all of it.
   assert.equal(capture.gas, 1n << 62n);
+});
+
+test("multiple arguments reach the host concatenated, in declaration order", async () => {
+  // `transfer(to: address, amount: uint128)` — borsh concatenates the
+  // arguments with no framing, so the calldata is 32 raw address bytes
+  // followed by 16 little-endian u128 bytes. Getting the order or the
+  // widths wrong here would decode as a different call on the callee
+  // side, which is the kind of bug that only shows up cross-contract.
+  const capture = {};
+  const ex = await instantiate({ capture });
+
+  // Fill the target slot with a recognisable address.
+  new Uint8Array(ex.memory.buffer, ex.targetPtr(), 32).fill(0xab);
+  ex.doMultiArgCall(258n); // 0x0102
+
+  assert.equal(capture.fn, "transfer", "function name must reach the host");
+  assert.equal(capture.calldata.length, 48, "32-byte address + 16-byte u128");
+  assert.deepEqual([...capture.calldata.slice(0, 32)], new Array(32).fill(0xab));
+  // 258 little-endian across 16 bytes.
+  assert.deepEqual(
+    [...capture.calldata.slice(32)],
+    [0x02, 0x01, ...new Array(14).fill(0)],
+  );
 });
 
 test("statusName never swallows an unrecognised code", async () => {

@@ -9,6 +9,8 @@
 import { Call, StaticCall, DelegateCall, CallResult } from "../assembly/call";
 import { statusName } from "../assembly/status";
 import { u128 } from "../assembly/u128";
+import { BorshEncoder } from "../assembly/borsh";
+import { Address } from "../assembly/types";
 
 const TARGET = new StaticArray<u8>(32);
 const ARGS = new StaticArray<u8>(64);
@@ -55,6 +57,21 @@ export function doCall(argsLen: i32): void {
 /// Same, but with a return cap, to exercise the oversized-return guard.
 export function doCallWithCap(cap: i32): void {
   record(Call(TARGET, "transfer").returnCap(cap).exec());
+}
+
+/// A MULTI-ARGUMENT call, built the way a contract author would: borsh
+/// encodes each argument in declaration order into one buffer. The engine
+/// expects the arguments concatenated with no framing, so `transfer(to:
+/// address, amount: uint128)` is 32 raw address bytes followed by 16
+/// little-endian u128 bytes. The test asserts the host receives exactly
+/// that, which is the only way to know the args survived the trip.
+export function doMultiArgCall(amountLo: u64): void {
+  const to = changetype<Address>(TARGET);
+  const cd = new BorshEncoder()
+    .address(to)
+    .u128(u128.fromU64(amountLo))
+    .toBytes();
+  record(Call(TARGET, "transfer").args(cd).exec());
 }
 
 /// Attach value — routes through `cross_call` with a value pointer.
