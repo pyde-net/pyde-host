@@ -108,12 +108,15 @@ test("an endowment is passed as 16 little-endian bytes", async () => {
   assert.deepEqual([...capture.value], [0x02, 0x01, ...new Array(14).fill(0)]);
 });
 
-test("the default gas budget is the forward-all sentinel", async () => {
+test("the default gas budget forwards everything remaining", async () => {
   const capture = {};
   const ex = await instantiate({ capture });
   ex.doInstantiate();
-  // -1, NOT a large positive number. instantiate reads a negative limit as
-  // "forward everything"; a big positive value would CAP the constructor.
+  // Pins the sentinel the SDK sends, matching Rust and Go, which both use
+  // -1 here. It does NOT assert a behavioural difference from cross_call:
+  // the engine resolves both with the same expression
+  // (u64::try_from(gas).unwrap_or(remaining).min(remaining)), so a negative
+  // and an over-large positive are equivalent in both host fns.
   assert.equal(capture.gas, -1n);
 });
 

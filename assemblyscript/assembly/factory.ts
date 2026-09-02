@@ -23,10 +23,18 @@ import { revertStr } from "./exit";
 import { STATUS_OK, ERR_CTOR_REVERTED, statusName } from "./status";
 import { MAX_RETURN_BYTES } from "./call";
 
-/// Gas sentinel. Unlike `cross_call`, which min-clamps a large budget,
-/// `instantiate` treats a NEGATIVE limit as "forward everything remaining"
-/// (§7.12). Passing a big positive number here would cap the constructor
-/// instead, which is the opposite of what it looks like.
+/// Gas sentinel: forward everything the parent frame has left.
+///
+/// Verified against `engine/crates/wasm-exec/src/host_fns/instantiate.rs`:
+/// the limit is resolved as
+/// `u64::try_from(gas).unwrap_or(remaining).min(remaining)`, so a negative
+/// value and an over-large positive one both end up forwarding all
+/// remaining gas. `cross_call` resolves it with the identical expression.
+///
+/// `-1` is chosen to match the Rust and Go SDKs, which both use it here.
+/// Note those two use a large positive sentinel for cross-calls instead
+/// (`i64::MAX` and `1 << 62`), so the vocabulary is inconsistent ACROSS
+/// host fns while the engine behaviour is not.
 export const FORWARD_ALL_CTOR_GAS: i64 = -1;
 
 /// The outcome of an instantiation.
