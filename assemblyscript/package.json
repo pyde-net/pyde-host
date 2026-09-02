@@ -38,7 +38,7 @@
     "build:transform": "tsc -p transform/tsconfig.json",
     "prepare": "npm run build:transform",
     "test:transform": "npm run build:transform && node --test transform/dist/tests/*.spec.js",
-    "test": "node tests/child.test.mjs && node tests/codec_parity.spec.mjs && node --test tests/call.test.mjs && npm run test:transform"
+    "test": "node tests/child.test.mjs && node tests/codec_parity.spec.mjs && node --test tests/call.test.mjs && node --test tests/factory.test.mjs && npm run test:transform"
   },
   "peerDependencies": {
     "assemblyscript": ">=0.27.30 <0.29.0"

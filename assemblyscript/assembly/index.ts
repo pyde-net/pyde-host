@@ -32,5 +32,10 @@ export * from "./hash";
 export * from "./status";
 export * from "./call";
 
+// ── native value, signatures, child instantiation ───────────────────────
+export * from "./account";
+export * from "./sig";
+export * from "./factory";
+
 // ── factory child-address helpers ───────────────────────────────────────
 export * from "./child";
