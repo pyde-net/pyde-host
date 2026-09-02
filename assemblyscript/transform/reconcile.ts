@@ -471,7 +471,22 @@ export function reconcile(
 
     const manifestView = fn.attributes.includes("view");
     const manifestPayable = fn.attributes.includes("payable");
-    const manifestEntry = fn.attributes.includes("entry");
+    // `@entry` is STRUCTURAL, not an intent claim: it means "this is
+    // chain-facing, generate the dispatch shim for it". A constructor is
+    // chain-facing too — it just runs once, at deploy — so it satisfies the
+    // marker. This mirrors Rust, where `#[pyde::entry]` sits above a
+    // constructor without complaint.
+    //
+    // Requiring a separate `@constructor` marker would diverge from Rust for
+    // no safety gain: the engine already excludes constructors from the
+    // public dispatch surface (HOST_FN_ABI §3.5), so "callable once, at
+    // deploy" is enforced where it belongs rather than by an annotation.
+    //
+    // `@view` / `@mutating` / `@payable` stay genuine intent claims, because
+    // asserting "this does not mutate" against a manifest that says it does
+    // is a real contradiction. "This is an entry point" is not.
+    const manifestEntry =
+      fn.attributes.includes("entry") || fn.attributes.includes("constructor");
 
     if (markers.has("view") && !manifestView) {
       problems.push({
@@ -511,8 +526,8 @@ export function reconcile(
       problems.push({
         intent,
         source: "@entry — declares this a chain-facing entry point",
-        manifest: `${manifest.path}:${fn.line}: ${attrList(fn)} — no "entry"`,
-        fix: `drop @entry, or add "entry" to [functions.${fn.name}].attributes`,
+        manifest: `${manifest.path}:${fn.line}: ${attrList(fn)} — neither "entry" nor "constructor"`,
+        fix: `drop @entry, or add "entry" (or "constructor") to [functions.${fn.name}].attributes`,
       });
     }
   }

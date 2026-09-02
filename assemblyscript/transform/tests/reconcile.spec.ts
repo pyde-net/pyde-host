@@ -249,6 +249,23 @@ describe("reconcile", () => {
     assert.match(problem!.source, /@entry/);
   });
 
+  test("@entry is satisfied by a constructor, matching Rust", () => {
+    // `@entry` is STRUCTURAL — "this is chain-facing, generate the shim" —
+    // not a claim that the manifest says `entry`. A constructor is
+    // chain-facing too; it just runs once, at deploy. Rust puts
+    // #[pyde::entry] above a constructor for exactly this reason, and the
+    // engine already keeps constructors off the public dispatch surface
+    // (HOST_FN_ABI §3.5), so a marker re-litigating that buys nothing.
+    const m = manifestOf('[functions.configure]\nattributes = ["constructor"]\n');
+    assert.deepEqual(reconcile([intent("configure", ["entry"])], m), []);
+  });
+
+  test("@entry still fails on a function that is neither entry nor constructor", () => {
+    const m = manifestOf('[functions.helper]\nattributes = []\n');
+    const [problem] = reconcile([intent("helper", ["entry"])], m);
+    assert.match(problem!.manifest, /neither "entry" nor "constructor"/);
+  });
+
   test("markers naming a function the manifest never declares fail", () => {
     const [problem] = reconcile([intent("__nope_impl", ["view"])], manifest);
     assert.match(problem!.manifest, /no \[functions\.nope\] table/);
