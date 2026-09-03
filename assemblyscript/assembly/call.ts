@@ -158,8 +158,18 @@ export class CallBuilder {
       );
     }
 
-    // The host always writes a length: the return value on success, the
-    // revert payload on a revert, and 0 for a failure that never ran.
+    // The host writes a length only on the two paths where the callee
+    // actually ran: its return value on success, its revert payload on
+    // ERR_CROSS_CALL_FAILED. Every other status is a refusal decided
+    // BEFORE the callee ran — a bad function name, a blocked reentrant
+    // call — and on those the host returns without touching the pointer,
+    // leaving it at the capacity seeded above. Reading it there would
+    // hand back a whole bufferful of zero bytes as if the callee had sent
+    // a revert message, which is both wrong and enormous.
+    if (rc != STATUS_OK && rc != ERR_CROSS_CALL_FAILED) {
+      return new CallResult(rc, new StaticArray<u8>(0));
+    }
+
     let n = outLen[0];
     if (n < 0) n = 0;
 

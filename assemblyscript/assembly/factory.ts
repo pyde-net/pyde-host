@@ -149,9 +149,19 @@ export class Factory {
       changetype<usize>(outLen),
     );
 
-    let n = outLen[0];
-    if (n < 0) n = 0;
-    if (n > this.cap) n = this.cap;
+    // The host writes a length only once the constructor has actually run:
+    // its return value on success, its revert payload on ERR_CTOR_REVERTED.
+    // Every other status is a refusal decided BEFORE the constructor ran —
+    // an occupied child address, a template that is not a contract — and on
+    // those the host returns without touching the pointer, leaving it at the
+    // capacity seeded above. Reading it there would hand back a bufferful of
+    // zero bytes as if the constructor had sent a revert message.
+    let n = 0;
+    if (rc == STATUS_OK || rc == ERR_CTOR_REVERTED) {
+      n = outLen[0];
+      if (n < 0) n = 0;
+      if (n > this.cap) n = this.cap;
+    }
 
     const data = new StaticArray<u8>(n);
     if (n > 0) {
