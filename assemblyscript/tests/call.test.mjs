@@ -40,10 +40,20 @@ const ERR_INVALID_FUNCTION_NAME = -13;
 /// `reportLen` models a callee whose return is LARGER than the buffer: the
 /// host fills what fits and reports the true length, which is the signal
 /// the wrapper must treat as an overflow. Defaults to the payload length.
+///
+/// `writesLen: false` models the engine's REFUSAL paths. When a call is
+/// rejected before the callee runs — a bad function name, a blocked
+/// reentrant call — the host returns the status without ever touching
+/// `outLenPtr` (engine `host_fns/delegate_call.rs` returns
+/// `ERR_INVALID_FUNCTION_NAME` well above the block that writes the
+/// length). The pointer keeps the capacity the wrapper seeded, so a
+/// wrapper that trusts it reads a whole bufferful of zero bytes as a
+/// revert payload.
 async function instantiate({
   status = STATUS_OK,
   payload = new Uint8Array(0),
   reportLen = null,
+  writesLen = true,
   capture = {},
 } = {}) {
   let mem;
@@ -53,7 +63,9 @@ async function instantiate({
     // memory, it reports the true length through outLenPtr and lets the
     // caller decide.
     u8.set(payload, outPtr);
-    new DataView(mem.buffer).setInt32(outLenPtr, reportLen ?? payload.length, true);
+    if (writesLen) {
+      new DataView(mem.buffer).setInt32(outLenPtr, reportLen ?? payload.length, true);
+    }
     return status;
   };
   const notCalled = (name) => () => {
@@ -135,6 +147,35 @@ test("a failure that never ran is not reported as a revert", async () => {
   assert.equal(ex.lastStatusCode(), ERR_INVALID_FUNCTION_NAME);
   assert.equal(ex.lastWasReverted(), 0);
   assert.equal(ex.lastDataLen(), 0);
+});
+
+test("a refusal the host never wrote a length for yields no payload", async () => {
+  // The engine returns ERR_INVALID_FUNCTION_NAME without touching the
+  // out-length pointer, so it still holds the capacity the wrapper seeded.
+  // Trusting it would surface a whole 16 KiB buffer of zero bytes as the
+  // callee's revert message — and mask the real status behind it.
+  const ex = await instantiate({
+    status: ERR_INVALID_FUNCTION_NAME,
+    writesLen: false,
+  });
+  ex.doCall(0);
+  assert.equal(ex.lastStatusCode(), ERR_INVALID_FUNCTION_NAME);
+  assert.equal(ex.lastWasReverted(), 0);
+  assert.equal(ex.lastDataLen(), 0);
+  assert.equal(decodeOut(ex, ex.lastMessageInto()), "");
+});
+
+test("delegate-call refusals are equally payload-free", async () => {
+  // Same seam, and the one a proxy hits first: forward() to a function the
+  // logic contract does not export.
+  const ex = await instantiate({
+    status: ERR_INVALID_FUNCTION_NAME,
+    writesLen: false,
+  });
+  ex.doDelegateCall();
+  assert.equal(ex.lastStatusCode(), ERR_INVALID_FUNCTION_NAME);
+  assert.equal(ex.lastDataLen(), 0);
+  assert.equal(decodeOut(ex, ex.lastMessageInto()), "");
 });
 
 test("an oversized return reverts rather than truncating", async () => {

@@ -33,6 +33,7 @@ async function instantiate({
   status = STATUS_OK,
   payload = new Uint8Array(0),
   childFill = 0xcd,
+  writesLen = true,
   balanceLo = 0n,
   transferStatus = STATUS_OK,
   capture = {},
@@ -52,7 +53,13 @@ async function instantiate({
       // bounds checks — including failures.
       u8.fill(childFill, childPtr, childPtr + 32);
       u8.set(payload, outPtr);
-      new DataView(mem.buffer).setInt32(outLenPtr, payload.length, true);
+      // The engine writes the length only once the CONSTRUCTOR has run —
+      // on success and on ERR_CTOR_REVERTED. A refusal decided earlier (an
+      // occupied child address, a template that is not a contract) returns
+      // without touching the pointer. `writesLen: false` models that.
+      if (writesLen) {
+        new DataView(mem.buffer).setInt32(outLenPtr, payload.length, true);
+      }
       return status;
     },
     balance: (_addrPtr, outPtr) => {
@@ -132,6 +139,27 @@ test("a constructor revert is distinguished from a refusal", async () => {
   const ex2 = await instantiate({ status: ERR_CHILD_ADDRESS_TAKEN });
   ex2.doInstantiate();
   assert.equal(ex2.lastWasCtorRevert(), 0);
+});
+
+test("a refusal the host never wrote a length for yields no payload", async () => {
+  // -44 is decided before the constructor runs, and the engine returns it
+  // without touching the out-length pointer — which still holds the
+  // capacity the wrapper seeded. Trusting it would surface a whole buffer
+  // of zero bytes as the constructor's revert message.
+  const capture = {};
+  const ex = await instantiate({
+    status: ERR_CHILD_ADDRESS_TAKEN,
+    writesLen: false,
+    capture,
+  });
+  ex.doInstantiate();
+  assert.equal(ex.lastWasCtorRevert(), 0);
+  assert.equal(ex.lastMessageInto(), 0);
+
+  // And the synthesized reason must still name the status, not a run of
+  // padding bytes.
+  assert.throws(() => ex.doInstantiateOrRevert(), /REVERT/);
+  assert.equal(capture.revertReason, "pyde: instantiate failed: child-address-taken");
 });
 
 test("instantiateOrRevert forwards the constructor's message verbatim", async () => {
