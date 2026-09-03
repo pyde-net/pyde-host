@@ -8,8 +8,8 @@ child-address helpers. Every extern is annotated with its section in
 [`HOST_FN_ABI_SPEC.md`](../HOST_FN_ABI_SPEC.md) and its gas cost.
 
 The package also ships an optional `asc` compiler plugin on the
-`/transform` subpath — the `@view` / `@mutating` / `@payable` markers
-described [below](#function-intent-view--mutating--payable). It is
+`/transform` subpath — the `@view` / `@payable` markers
+described [below](#function-intent-view--payable). It is
 build-time only: no part of it reaches your wasm.
 
 ## Install
@@ -170,7 +170,7 @@ adding `contract.ts` is the one-file opt-in, deleting it the opt-out.
 Commit `pyde.generated.ts` (like a `.pb.go`): it keeps diffs honest and
 lets editors resolve the exports without a build step.
 
-## Function intent: `@view` / `@mutating` / `@payable`
+## Function intent: `@view` / `@payable`
 
 The generated shim tells you what an entry point *takes*. Nothing in
 `contract.ts` tells you what it *does* — whether it writes state, whether
@@ -182,16 +182,20 @@ intent where the logic is:
 
 ```ts
 // assembly/contract.ts
+@entry
 @view
-export function __get_impl(): u64 {
+export function get(): u64 {
   return storage.counter.read();
 }
 
-@mutating
-export function __increment_impl(): u64 { … }
+// `@entry` alone is mutating — the default, same as Rust's
+// `#[pyde::entry]`. Nothing extra to write.
+@entry
+export function increment(): u64 { … }
 
+@entry
 @payable
-export function __deposit_impl(): void { … }
+export function deposit(): void { … }
 ```
 
 Enable it in `asconfig.json`:
@@ -211,7 +215,7 @@ them up against the manifest, and fails the build when they disagree:
 ```
 FAILURE IntentMismatch: function intent in AssemblyScript disagrees with otigen.toml
 
-  1. assembly/contract.ts:70 — `__increment_impl` (function `increment`)
+  1. assembly/contract.ts:70 — `increment` (function `increment`)
        source      : @view — declares this entry never writes state
        otigen.toml : /w/otigen.toml:61: attributes = ["entry"] — no "view", so the ABI marks it mutating
        fix         : drop @view, or add "view" to [functions.increment].attributes
@@ -226,15 +230,19 @@ break it.
 | Marker | Required in `[functions.<name>].attributes` | If the attribute is there but the marker isn't |
 |---|---|---|
 | `@view` | `view` | not an error — silence claims nothing |
-| `@mutating` | no `view` | not an error |
 | `@payable` | `payable` | **error** |
 | `@entry` | `entry` | not an error |
+| `@mutating` | no `view` | not an error |
 
 `@payable` is the one symmetric rule. On an annotated function, saying
 nothing about value reads as "this entry refuses value" — a safety claim
 the manifest may not be making, so the transform makes you state it.
-`@view` and `@mutating` on the same function is always an error, as is a
-marker naming a function `[functions.*]` never declares.
+
+`@mutating` is accepted but redundant, and the templates do not use it:
+an `@entry` with no `@view` is already mutating, so the marker only
+restates the default. It stays supported so existing contracts keep
+building. `@view` and `@mutating` on the same function is always an
+error, as is a marker naming a function `[functions.*]` never declares.
 
 The marker sits on the `__<fn>_impl` body; the transform maps that name
 back to its manifest key. Contracts that export their own `() -> ()`
