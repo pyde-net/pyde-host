@@ -12,7 +12,7 @@ and this project's versioning tracks the `HOST_FN_ABI_SPEC` version — see
 - **`@pyde-net/host/transform` — function-intent markers for
   AssemblyScript.** An optional `asc` plugin, wired through
   `asconfig.json`'s `options.transform`, that reads `@view` /
-  `@mutating` / `@payable` / `@entry` off the `__<fn>_impl` bodies and
+  `@mutating` / `@payable` / `@entry` off the entry-point bodies and
   cross-checks them against `[functions.*]` in `otigen.toml`. A
   disagreement fails the build with an error citing both the marker and
   the manifest line; agreement changes nothing.
@@ -25,6 +25,37 @@ and this project's versioning tracks the `HOST_FN_ABI_SPEC` version — see
   - Supported range `asc >= 0.27.30, < 0.29.0`; outside it the plugin
     warns and stands down rather than reading an AST it can't vouch
     for, so a compiler bump can cost the sugar but never the substrate.
+
+## [0.1.0-alpha.17] — 2026-09-03
+
+AssemblyScript only. No ABI change: the spec, the host-fn set, and the
+Rust / Go / C bindings are untouched.
+
+### Fixed
+- **A refused cross-call or instantiate no longer returns the whole
+  out-buffer as a revert payload.** `CallBuilder.exec` and
+  `Factory.instantiate` seed the out-length pointer with the buffer
+  capacity, because the host reads it as the limit, and then read it
+  back to size the payload. The host only *writes* that pointer once
+  the callee has run — its return value on success, its revert payload
+  on `ERR_CROSS_CALL_FAILED` (`ERR_CTOR_REVERTED` for instantiate). A
+  call refused *before* the callee ran — an unknown function name, a
+  blocked reentrant call, an occupied child address — returns without
+  touching it, so the pointer still held the capacity and the wrapper
+  handed back 16 KiB of zero bytes.
+  - `revertMessage` decoded that as a long run of NULs. Because it was
+    non-empty, contracts that forward a callee's own message before
+    checking the status — the natural pattern — reverted with padding
+    and buried the real status behind it.
+  - Both wrappers now read the length only for the two statuses that
+    carry a payload, and return empty data otherwise. Success is
+    unchanged, including the oversized-return guard.
+
+### Changed
+- The intent-marker docs now state that `@entry` with no `@view` is
+  already mutating, matching a bare `#[pyde::entry]` in Rust.
+  `@mutating` remains accepted but is redundant, and the examples no
+  longer show the `__<fn>_impl` naming that `@entry` replaced.
 
 ## [0.1.0-alpha.9] — 2026-07-22
 
