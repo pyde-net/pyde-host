@@ -28,6 +28,7 @@
 
 import { u128, i128 } from "as-bignum/assembly";
 import { readU64LE, writeU64LE, readI64LE, writeI64LE } from "./codec";
+import { revertStr } from "./exit";
 
 // Re-export the value types so contracts get the arithmetic operators
 // (+, -, *, /, ==, <, <=, >, >=, ...) without importing as-bignum
@@ -64,7 +65,9 @@ export function u128ToBytesLE(value: u128): StaticArray<u8> {
 
 // Decode a u128 from a 16-byte little-endian StaticArray.
 export function u128FromBytesLE(bytes: StaticArray<u8>): u128 {
-  assert(bytes.length == U128_LEN, "u128FromBytesLE: need exactly 16 bytes");
+  if (!(bytes.length == U128_LEN)) {
+    revertStr("u128FromBytesLE: need exactly 16 bytes");
+  }
   return readU128LE(changetype<usize>(bytes));
 }
 
@@ -103,6 +106,8 @@ export function i128ToBytesLE(value: i128): StaticArray<u8> {
 
 // Decode an i128 from a 16-byte little-endian two's-complement StaticArray.
 export function i128FromBytesLE(bytes: StaticArray<u8>): i128 {
-  assert(bytes.length == I128_LEN, "i128FromBytesLE: need exactly 16 bytes");
+  if (!(bytes.length == I128_LEN)) {
+    revertStr("i128FromBytesLE: need exactly 16 bytes");
+  }
   return readI128LE(changetype<usize>(bytes));
 }

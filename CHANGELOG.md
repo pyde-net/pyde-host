@@ -26,6 +26,43 @@ and this project's versioning tracks the `HOST_FN_ABI_SPEC` version — see
     warns and stands down rather than reading an AST it can't vouch
     for, so a compiler bump can cost the sugar but never the substrate.
 
+## [0.1.0-alpha.18] — 2026-09-04
+
+AssemblyScript only. **Security fix — upgrade before deploying any
+AssemblyScript contract.** No ABI change.
+
+### Fixed
+- **Every runtime guard in the AssemblyScript SDK was compiled out of
+  shipped contracts.** Nine checks across four modules used `assert(...)`,
+  and the release target sets `noAssert: true`, which strips every assert
+  from the wasm. The guards existed in source and in nothing that runs on
+  chain.
+  - The worst is `BorshDecoder.take`. With its bounds check gone, decoding
+    more fields than the calldata carries reads past the end of the buffer
+    and returns whatever adjacent linear memory holds, silently. A
+    contract deployed with missing constructor arguments does not fail —
+    it initialises from garbage. Reported from exactly that: a `pts-f/1`
+    token deployed with no arguments, whose supply-cap check then
+    correctly rejected the nonsense it had been handed.
+  - `childPreimage` and `unorderedPairEncoding` were unguarded on all
+    five of their 32-byte length checks. A wrong-length component there
+    feeds a different Poseidon2 preimage, so the derived child address
+    silently changes.
+  - `u128FromBytesLE` / `i128FromBytesLE` no longer accept a slice that is
+    not exactly 16 bytes.
+  - All nine are now explicit `if (!cond) revertStr(...)` checks, which
+    survive the release build. A caller that sends short or malformed
+    calldata now gets a clean revert naming the problem.
+
+  Go, C and Rust were never affected: Go panics from `Decoder.take` (with
+  a conformance test pinning it), C bounds-checks at runtime, and Rust
+  decodes through borsh's `Result`. AssemblyScript was the only binding
+  whose guards did not survive its own release profile.
+
+### Changed
+- The codec modules now import the host `revert`, so `pyde` is a real
+  import of `borsh` / `u128` / `child`. The parity harness stubs it.
+
 ## [0.1.0-alpha.17] — 2026-09-03
 
 AssemblyScript only. No ABI change: the spec, the host-fn set, and the

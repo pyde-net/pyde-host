@@ -32,6 +32,7 @@ import {
   writeU128LE, writeI128LE, readU128LE, readI128LE,
 } from "./u128";
 import { Address, Bytes32, bytes32FromPtr, BYTES32_LEN } from "./types";
+import { revertStr } from "./exit";
 
 // ─────────────────────────────────────────────────────────────────────
 // Encoder
@@ -86,7 +87,9 @@ export class BorshEncoder {
 
   // ── fixed 32-byte values: address / hash32 (raw, no prefix) ─────────
   private fixed32(b: StaticArray<u8>): BorshEncoder {
-    assert(b.length == BYTES32_LEN, "borsh: address/hash32 must be 32 bytes");
+    if (!(b.length == BYTES32_LEN)) {
+      revertStr("borsh: address/hash32 must be 32 bytes");
+    }
     memory.copy(this.reserve(BYTES32_LEN), changetype<usize>(b), BYTES32_LEN);
     return this;
   }
@@ -150,7 +153,14 @@ export class BorshDecoder {
 
   // Claim `n` bytes, return a pointer to them, advance the cursor.
   private take(n: i32): usize {
-    assert(this.pos + n <= this.data.length, "borsh: unexpected end of input");
+    // An explicit check, NOT `assert`. The release target sets
+    // `noAssert: true`, which strips every `assert(...)` from the shipped
+    // wasm — so an assert here would guard the debug build and vanish from
+    // the only one that runs on chain, leaving a silent read past the end
+    // of calldata that returns whatever adjacent linear memory holds.
+    if (!(this.pos + n <= this.data.length)) {
+      revertStr("borsh: unexpected end of input");
+    }
     const p = changetype<usize>(this.data) + <usize>this.pos;
     this.pos += n;
     return p;
