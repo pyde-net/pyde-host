@@ -1,6 +1,6 @@
 {
   "name": "@pyde-net/host",
-  "version": "0.1.0-alpha.17",
+  "version": "0.1.0-alpha.18",
   "description": "The AssemblyScript SDK for Pyde contracts: the full pyde::* host ABI plus pointer-free ergonomic wrappers — LE codecs, 128-bit math, borsh, ctx/calldata/exit/hash, and factory child-address helpers.",
   "author": "zarah <zarah@pyde.network>",
   "license": "MIT OR Apache-2.0",

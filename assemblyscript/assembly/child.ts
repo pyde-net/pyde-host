@@ -12,6 +12,7 @@
 // where a short input would read stale bytes — keep asserts on).
 
 import { hash_poseidon2 } from "./host_fns";
+import { revertStr } from "./exit";
 
 // Domain-separator prefix for child (factory-instantiated) addresses:
 // "pyde-child:" — exactly 11 ASCII bytes (70 79 64 65 2d 63 68 69 6c
@@ -36,9 +37,15 @@ export function childPreimage(
   template: StaticArray<u8>,
   salt: StaticArray<u8>,
 ): StaticArray<u8> {
-  assert(parent.length == 32, "childPreimage: parent must be 32 bytes");
-  assert(template.length == 32, "childPreimage: template must be 32 bytes");
-  assert(salt.length == 32, "childPreimage: salt must be 32 bytes");
+  if (!(parent.length == 32)) {
+    revertStr("childPreimage: parent must be 32 bytes");
+  }
+  if (!(template.length == 32)) {
+    revertStr("childPreimage: template must be 32 bytes");
+  }
+  if (!(salt.length == 32)) {
+    revertStr("childPreimage: salt must be 32 bytes");
+  }
   const p = new StaticArray<u8>(CHILD_PREIMAGE_LEN);
   const base = changetype<usize>(p);
   memory.copy(base, changetype<usize>(CHILD_ADDRESS_PREFIX), 11);
@@ -58,8 +65,12 @@ export function unorderedPairEncoding(
   a: StaticArray<u8>,
   b: StaticArray<u8>,
 ): StaticArray<u8> {
-  assert(a.length == 32, "unorderedPairEncoding: a must be 32 bytes");
-  assert(b.length == 32, "unorderedPairEncoding: b must be 32 bytes");
+  if (!(a.length == 32)) {
+    revertStr("unorderedPairEncoding: a must be 32 bytes");
+  }
+  if (!(b.length == 32)) {
+    revertStr("unorderedPairEncoding: b must be 32 bytes");
+  }
   let swap = false;
   for (let i = 0; i < 32; i++) {
     const ai = a[i];

@@ -46,7 +46,18 @@ try {
       throw new Error(`wasm abort at ${line}:${col}`);
     },
   };
-  const instance = await WebAssembly.instantiate(new WebAssembly.Module(bytes), { env });
+  // The codec guards call the host `revert` rather than `assert`, because the
+  // release target strips asserts (`noAssert: true`). That makes `pyde` a real
+  // import of these modules, so the stub has to provide it — throwing here
+  // mirrors how the chain unwinds the frame.
+  const pyde = {
+    revert: (ptr, len) => {
+      const msg = Buffer.from(memRef.u8().subarray(ptr, ptr + len)).toString("utf8");
+      throw new Error(`revert: ${msg}`);
+    },
+  };
+  const memRef = { u8: () => new Uint8Array(instance.exports.memory.buffer) };
+  const instance = await WebAssembly.instantiate(new WebAssembly.Module(bytes), { env, pyde });
   const ex = instance.exports;
 
   const memU8 = () => new Uint8Array(ex.memory.buffer);
